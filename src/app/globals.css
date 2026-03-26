@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  overscroll-behavior: none;
+}
+
+input[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
+}
