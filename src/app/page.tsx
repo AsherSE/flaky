@@ -2,6 +2,14 @@
 
 import { useState } from "react";
 
+/** Calendar date in local timezone (YYYY-MM-DD). Avoids UTC vs local mismatch from toISOString(). */
+function localYmd(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 type Step = "phone" | "code" | "flake" | "result";
 
 interface FlakeResult {
@@ -14,9 +22,7 @@ export default function Home() {
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [targetPhone, setTargetPhone] = useState("");
-  const [date, setDate] = useState(
-    () => new Date().toISOString().split("T")[0]
-  );
+  const [date, setDate] = useState(() => localYmd());
   const [token, setToken] = useState<string | null>(null);
   const [result, setResult] = useState<FlakeResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -87,7 +93,7 @@ export default function Home() {
 
   const resetFlake = () => {
     setTargetPhone("");
-    setDate(new Date().toISOString().split("T")[0]);
+    setDate(localYmd());
     setResult(null);
     setError("");
     setStep("flake");
@@ -205,7 +211,7 @@ export default function Home() {
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
-                  min={new Date().toISOString().split("T")[0]}
+                  min={localYmd()}
                   className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] bg-transparent transition-colors"
                 />
               </label>
@@ -256,9 +262,15 @@ export default function Home() {
           )}
         </div>
 
-        <p className="text-center text-xs text-[#bbb] mt-6">
-          your plans, your call
-        </p>
+        <div className="flex justify-center mt-6">
+          <button
+            type="button"
+            onClick={() => {}}
+            className="text-xs text-[#bbb] hover:text-[#888] transition-colors"
+          >
+            Feedback
+          </button>
+        </div>
       </div>
     </main>
   );
