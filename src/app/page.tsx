@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { normalizePhone } from "@/lib/phone";
 
@@ -285,9 +286,19 @@ export default function Home() {
       <div className="flex min-h-full items-start justify-center px-4 pb-4 pt-14">
         <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-[#3d3d3d] tracking-tight">
-            flaky
-          </h1>
+          <div className="flex items-center justify-center gap-0">
+            <Image
+              src="/logo.png"
+              alt=""
+              width={650}
+              height={662}
+              priority
+              className="h-14 w-auto shrink-0"
+            />
+            <h1 className="text-4xl font-bold text-[#3d3d3d] tracking-tight">
+              flaky
+            </h1>
+          </div>
           <p className="text-[#8a8a8a] mt-1 text-sm">
             cancel plans, guilt-free
           </p>

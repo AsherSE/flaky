@@ -4,16 +4,65 @@ import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
 
+const siteDescription =
+  "Secretly flag that you want to cancel. If they feel the same, you're both off the hook.";
+
+function absoluteSiteUrl(): URL {
+  const raw =
+    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
+    "http://localhost:3000";
+  return new URL(raw.endsWith("/") ? raw.slice(0, -1) : raw);
+}
+
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  themeColor: "#e07a5f",
 };
 
 export const metadata: Metadata = {
-  title: "flaky — cancel plans, guilt-free",
-  description:
-    "Secretly flag that you want to cancel. If they feel the same, you're both off the hook.",
+  metadataBase: absoluteSiteUrl(),
+  title: {
+    default: "flaky — cancel plans, guilt-free",
+    template: "%s — flaky",
+  },
+  description: siteDescription,
+  applicationName: "flaky",
+  icons: {
+    icon: [{ url: "/logo.png", type: "image/png", sizes: "650x662" }],
+    apple: [{ url: "/logo.png", type: "image/png" }],
+    shortcut: "/logo.png",
+  },
+  appleWebApp: {
+    capable: true,
+    title: "flaky",
+    statusBarStyle: "default",
+  },
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    siteName: "flaky",
+    title: "flaky — cancel plans, guilt-free",
+    description: siteDescription,
+    url: "/",
+    images: [
+      {
+        url: "/logo.png",
+        width: 650,
+        height: 662,
+        alt: "flaky",
+        type: "image/png",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "flaky — cancel plans, guilt-free",
+    description: siteDescription,
+    images: ["/logo.png"],
+  },
 };
 
 export default function RootLayout({
