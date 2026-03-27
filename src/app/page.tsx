@@ -20,6 +20,7 @@ interface FlakeResult {
 
 interface MyCancellationItem {
   date: string;
+  participants?: string[];
   totalPeople: number;
   cancelledCount: number;
   mutual: boolean;
@@ -34,6 +35,20 @@ function formatPlanDate(ymd: string): string {
     day: "numeric",
     year: "numeric",
   });
+}
+
+/** Compare to session phone (any format) vs stored E.164. */
+function formatParticipantForList(rawSelf: string, participantE164: string) {
+  const self = normalizePhone(rawSelf);
+  if (self && self === participantE164) return "You";
+  const digits = participantE164.replace(/\D/g, "");
+  if (digits.length >= 4) {
+    const last4 = digits.slice(-4);
+    return digits.length === 11 && digits.startsWith("1")
+      ? `+1 …${last4}`
+      : `…${last4}`;
+  }
+  return participantE164;
 }
 
 function CancelProgressPie({
@@ -127,7 +142,15 @@ export default function Home() {
         if (!res.ok) return;
         const data: { items?: MyCancellationItem[] } = await res.json();
         if (cancelled) return;
-        setMyCancellations(Array.isArray(data.items) ? data.items : []);
+        const rawItems = Array.isArray(data.items) ? data.items : [];
+        setMyCancellations(
+          rawItems.map((item) => ({
+            ...item,
+            participants: Array.isArray(item.participants)
+              ? item.participants
+              : [],
+          }))
+        );
       } catch {
         if (!cancelled) setMyCancellations([]);
       }
@@ -226,8 +249,16 @@ export default function Home() {
           if (listRes.ok) {
             const listData: { items?: MyCancellationItem[] } =
               await listRes.json();
+            const rawItems = Array.isArray(listData.items)
+              ? listData.items
+              : [];
             setMyCancellations(
-              Array.isArray(listData.items) ? listData.items : []
+              rawItems.map((item) => ({
+                ...item,
+                participants: Array.isArray(item.participants)
+                  ? item.participants
+                  : [],
+              }))
             );
           }
         } catch {
@@ -497,41 +528,47 @@ export default function Home() {
         {token &&
         (step === "flake" || step === "result") &&
         myCancellations.length > 0 ? (
-          <div className="mt-5 rounded-2xl border border-[#e8e4df] bg-white/80 p-4 shadow-sm backdrop-blur-sm">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-[#9a9a9a]">
-              Plans you&apos;ve flagged
-            </h2>
-            <ul className="mt-3 space-y-3">
-              {myCancellations.map((item) => (
-                <li
-                  key={`${item.date}-${item.totalPeople}-${item.cancelledCount}`}
-                  className="flex items-center gap-3 rounded-xl bg-[#faf8f5] px-3 py-2.5"
-                >
-                  <CancelProgressPie
-                    cancelledCount={item.cancelledCount}
-                    totalPeople={item.totalPeople}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-[#3d3d3d]">
-                      {formatPlanDate(item.date)}
-                    </p>
-                    <p className="text-xs text-[#8a8a8a] mt-0.5">
-                      {item.mutual ? (
-                        <span className="text-[#5a7d6c]">
-                          Everyone wanted out — you&apos;re covered
-                        </span>
-                      ) : (
-                        <>
-                          {item.cancelledCount} of {item.totalPeople} want to
-                          cancel
-                        </>
-                      )}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <ul className="mt-8 space-y-7">
+            {myCancellations.map((item) => (
+              <li
+                key={`${item.date}:${(item.participants ?? []).join("|")}`}
+                className="flex items-start gap-3"
+              >
+                <CancelProgressPie
+                  cancelledCount={item.cancelledCount}
+                  totalPeople={item.totalPeople}
+                />
+                <div className="min-w-0 flex-1 pt-0.5">
+                  <p className="text-sm font-medium text-[#3d3d3d]">
+                    {formatPlanDate(item.date)}
+                  </p>
+                  <p className="text-xs text-[#8a8a8a] mt-0.5 leading-relaxed">
+                    {item.mutual ? (
+                      <span className="text-[#5a7d6c]">
+                        Everyone wanted out — you&apos;re covered
+                      </span>
+                    ) : (
+                      <>
+                        {item.cancelledCount} of {item.totalPeople} want to
+                        cancel
+                      </>
+                    )}
+                  </p>
+                  <p className="text-xs text-[#6a6a6a] mt-1.5 leading-relaxed">
+                    {[...(item.participants ?? [])]
+                      .sort((a, b) => {
+                        const self = normalizePhone(phone);
+                        const ay = self && a === self ? 0 : 1;
+                        const by = self && b === self ? 0 : 1;
+                        return ay - by || a.localeCompare(b);
+                      })
+                      .map((p) => formatParticipantForList(phone, p))
+                      .join(" · ")}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
         ) : null}
 
         <div className="flex justify-center mt-6">

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
 
+export const dynamic = "force-dynamic";
+
 const SESSION_TTL_SEC = 24 * 60 * 60;
 
 export async function GET(request: NextRequest) {

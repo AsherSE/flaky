@@ -3,6 +3,8 @@ import { normalizePhone } from "@/lib/phone";
 import { checkVerification } from "@/lib/twilio";
 import { redis } from "@/lib/redis";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(req: NextRequest) {
   const { phone: rawPhone, code } = await req.json();
   const phone = normalizePhone(rawPhone);

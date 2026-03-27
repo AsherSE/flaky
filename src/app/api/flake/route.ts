@@ -4,6 +4,8 @@ import { normalizePhone } from "@/lib/phone";
 import { getRandomMessage } from "@/lib/messages";
 import { sendSMS } from "@/lib/twilio";
 
+export const dynamic = "force-dynamic";
+
 const SEVEN_DAYS = 7 * 24 * 60 * 60;
 
 function userFlakesIndexKey(phone: string) {
@@ -82,6 +84,7 @@ export async function GET(req: NextRequest) {
 
       return {
         date: parsed.date,
+        participants: parsed.participants,
         totalPeople: total,
         cancelledCount,
         mutual: everyoneIn,

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { normalizePhone } from "@/lib/phone";
 import { sendVerification } from "@/lib/twilio";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(req: NextRequest) {
   const { phone: rawPhone } = await req.json();
   const phone = normalizePhone(rawPhone);
