@@ -2,87 +2,6 @@
 
 import { useEffect, useState } from "react";
 
-function contactsPickerAvailable(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const n = navigator as Navigator & {
-    contacts?: { select?: unknown };
-  };
-  return typeof n.contacts?.select === "function";
-}
-
-function sanitizePickedTel(raw: string): string {
-  let s = raw.trim();
-  if (s.toLowerCase().startsWith("tel:")) {
-    s = s.slice(4).trim();
-  }
-  return s;
-}
-
-async function pickFirstPhoneFromContacts(): Promise<string | null> {
-  const n = navigator as Navigator & {
-    contacts?: {
-      select: (
-        properties: string[],
-        options: { multiple: boolean }
-      ) => Promise<{ tel?: string[] }[]>;
-    };
-  };
-  const contacts = n.contacts;
-  if (!contacts?.select) return null;
-  const selected = await contacts.select(["tel"], { multiple: false });
-  const raw = selected[0]?.tel?.find((t) => t?.trim());
-  if (!raw) return null;
-  return sanitizePickedTel(raw);
-}
-
-function FillFromContactsButton({
-  onFilled,
-  disabled,
-}: {
-  onFilled: (value: string) => void;
-  disabled?: boolean;
-}) {
-  const [picking, setPicking] = useState(false);
-  const [hint, setHint] = useState<string | null>(null);
-  const supported =
-    typeof navigator !== "undefined" && contactsPickerAvailable();
-
-  return (
-    <div className="space-y-2">
-      <button
-        type="button"
-        disabled={disabled || picking}
-        onClick={async () => {
-          setHint(null);
-          if (!supported) {
-            setHint(
-              "Opening your address book only works in Chrome on Android over HTTPS. On this device, tap the number field — your keyboard or password manager can suggest a saved number."
-            );
-            return;
-          }
-          setPicking(true);
-          try {
-            const picked = await pickFirstPhoneFromContacts();
-            if (picked) onFilled(picked);
-          } catch {
-            /* cancelled or denied */
-          } finally {
-            setPicking(false);
-          }
-        }}
-        className="w-full py-3 rounded-xl font-medium border-2 border-[#81b29a] text-[#5a7d6c] bg-[#f4f9f6] hover:bg-[#e8f2ec] active:bg-[#dceee4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-      >
-        {picking ? "Opening contacts…" : "Fill from contacts"}
-      </button>
-      {hint && (
-        <p className="text-xs text-[#8a8a8a] leading-relaxed" role="status">
-          {hint}
-        </p>
-      )}
-    </div>
-  );
-}
-
 /** Calendar date in local timezone (YYYY-MM-DD). Avoids UTC vs local mismatch from toISOString(). */
 function localYmd(d: Date = new Date()): string {
   const y = d.getFullYear();
@@ -98,6 +17,50 @@ interface FlakeResult {
   message: string;
 }
 
+interface MyCancellationItem {
+  date: string;
+  totalPeople: number;
+  cancelledCount: number;
+  mutual: boolean;
+}
+
+function formatPlanDate(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return ymd;
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function CancelProgressPie({
+  cancelledCount,
+  totalPeople,
+}: {
+  cancelledCount: number;
+  totalPeople: number;
+}) {
+  const safeTotal = Math.max(1, totalPeople);
+  const pct = Math.min(100, Math.round((cancelledCount / safeTotal) * 100));
+  return (
+    <div
+      className="relative h-11 w-11 shrink-0 rounded-full bg-[#ece8e2]"
+      role="img"
+      aria-label={`${cancelledCount} of ${totalPeople} want to cancel`}
+    >
+      <div
+        className="absolute inset-0 rounded-full"
+        style={{
+          background: `conic-gradient(#e07a5f ${pct}%, transparent 0)`,
+        }}
+      />
+      <div className="absolute inset-[3px] rounded-full bg-white border border-[#eee]" />
+    </div>
+  );
+}
+
 const TOKEN_KEY = "flaky-token";
 
 export default function Home() {
@@ -111,6 +74,10 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [sessionChecked, setSessionChecked] = useState(false);
+  const [myCancellations, setMyCancellations] = useState<MyCancellationItem[]>(
+    []
+  );
+  const [myCancellationsLoading, setMyCancellationsLoading] = useState(false);
 
   useEffect(() => {
     const stored =
@@ -148,6 +115,30 @@ export default function Home() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!token || (step !== "flake" && step !== "result")) return;
+    let cancelled = false;
+    setMyCancellationsLoading(true);
+    (async () => {
+      try {
+        const res = await fetch("/api/flake", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data: { items?: MyCancellationItem[] } = await res.json();
+        if (cancelled) return;
+        setMyCancellations(Array.isArray(data.items) ? data.items : []);
+      } catch {
+        if (!cancelled) setMyCancellations([]);
+      } finally {
+        if (!cancelled) setMyCancellationsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, step]);
 
   const signOut = () => {
     window.localStorage.removeItem(TOKEN_KEY);
@@ -220,6 +211,22 @@ export default function Home() {
       }
       setResult(data);
       setStep("result");
+      void (async () => {
+        try {
+          const listRes = await fetch("/api/flake", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (listRes.ok) {
+            const listData: { items?: MyCancellationItem[] } =
+              await listRes.json();
+            setMyCancellations(
+              Array.isArray(listData.items) ? listData.items : []
+            );
+          }
+        } catch {
+          /* list refresh is optional */
+        }
+      })();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Something went wrong");
     } finally {
@@ -285,10 +292,6 @@ export default function Home() {
                   className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
                 />
               </label>
-              <FillFromContactsButton
-                onFilled={setPhone}
-                disabled={loading}
-              />
               <button
                 type="submit"
                 disabled={loading || !phone.trim()}
@@ -415,22 +418,6 @@ export default function Home() {
                     </div>
                   </div>
                 ))}
-                <FillFromContactsButton
-                  onFilled={(value) =>
-                    setTargetPhones((prev) => {
-                      const empty = prev.findIndex((t) => !t.trim());
-                      if (empty >= 0) {
-                        const next = [...prev];
-                        next[empty] = value;
-                        return next;
-                      }
-                      const next = [...prev];
-                      next[next.length - 1] = value;
-                      return next;
-                    })
-                  }
-                  disabled={loading}
-                />
               </div>
               <label className="block">
                 <span className="text-sm font-medium text-[#5a5a5a]">
@@ -499,6 +486,53 @@ export default function Home() {
             </div>
           ) : null}
         </div>
+
+        {token && (step === "flake" || step === "result") ? (
+          <div className="mt-5 rounded-2xl border border-[#e8e4df] bg-white/80 p-4 shadow-sm backdrop-blur-sm">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-[#9a9a9a]">
+              Plans you&apos;ve flagged
+            </h2>
+            {myCancellationsLoading && myCancellations.length === 0 ? (
+              <p className="mt-3 text-sm text-[#8a8a8a]">Loading…</p>
+            ) : myCancellations.length === 0 ? (
+              <p className="mt-3 text-sm text-[#8a8a8a] leading-relaxed">
+                When you tap &quot;I want to cancel,&quot; those plans show up
+                here with how many people have opted out so far.
+              </p>
+            ) : (
+              <ul className="mt-3 space-y-3">
+                {myCancellations.map((item) => (
+                  <li
+                    key={`${item.date}-${item.totalPeople}-${item.cancelledCount}`}
+                    className="flex items-center gap-3 rounded-xl bg-[#faf8f5] px-3 py-2.5"
+                  >
+                    <CancelProgressPie
+                      cancelledCount={item.cancelledCount}
+                      totalPeople={item.totalPeople}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-[#3d3d3d]">
+                        {formatPlanDate(item.date)}
+                      </p>
+                      <p className="text-xs text-[#8a8a8a] mt-0.5">
+                        {item.mutual ? (
+                          <span className="text-[#5a7d6c]">
+                            Everyone wanted out — you&apos;re covered
+                          </span>
+                        ) : (
+                          <>
+                            {item.cancelledCount} of {item.totalPeople} want to
+                            cancel
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
 
         <div className="flex justify-center mt-6">
           <button

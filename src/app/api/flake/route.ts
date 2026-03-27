@@ -6,6 +6,29 @@ import { sendSMS } from "@/lib/twilio";
 
 const SEVEN_DAYS = 7 * 24 * 60 * 60;
 
+function userFlakesIndexKey(phone: string) {
+  return `userFlakes:${phone}`;
+}
+
+/** Parse `flake:+p1:+p2:YYYY-MM-DD` — phones are +digits only so they never contain `:`. */
+function parseFlakeRedisKey(flakeKey: string): {
+  participants: string[];
+  date: string;
+} | null {
+  const parts = flakeKey.split(":");
+  if (parts.length < 4 || parts[0] !== "flake") return null;
+  const date = parts[parts.length - 1]!.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const participants = parts.slice(1, -1);
+  if (participants.length < 2) return null;
+  return { participants, date };
+}
+
+async function rememberUserFlaked(phone: string, flakeKey: string) {
+  await redis.sadd(userFlakesIndexKey(phone), flakeKey);
+  await redis.expire(userFlakesIndexKey(phone), SEVEN_DAYS);
+}
+
 function participantSetFromBody(body: unknown): string[] | null {
   if (!body || typeof body !== "object") return null;
   const o = body as Record<string, unknown>;
@@ -23,6 +46,55 @@ function participantSetFromBody(body: unknown): string[] | null {
     if (n) normalized.add(n);
   }
   return normalized.size ? Array.from(normalized) : null;
+}
+
+export async function GET(req: NextRequest) {
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const sessionToken = authHeader.slice(7);
+  const myPhone = await redis.get<string>(`session:${sessionToken}`);
+  if (!myPhone) {
+    return NextResponse.json({ error: "Session expired" }, { status: 401 });
+  }
+
+  const flakeKeys = await redis.smembers(userFlakesIndexKey(myPhone));
+  const items = await Promise.all(
+    flakeKeys.map(async (flakeKey) => {
+      const parsed = parseFlakeRedisKey(flakeKey);
+      if (!parsed) return null;
+
+      const raw = await redis.get<unknown>(flakeKey);
+      if (!Array.isArray(raw)) return null;
+
+      const flaked = Array.from(
+        new Set(
+          raw.filter((x): x is string => typeof x === "string" && x.length > 0)
+        )
+      );
+      if (!flaked.includes(myPhone)) return null;
+
+      const total = parsed.participants.length;
+      const cancelledCount = flaked.length;
+      const everyoneIn = total > 0 && cancelledCount >= total;
+
+      return {
+        date: parsed.date,
+        totalPeople: total,
+        cancelledCount,
+        mutual: everyoneIn,
+      };
+    })
+  );
+
+  const list = items.filter(
+    (x): x is NonNullable<typeof x> => x != null
+  );
+  list.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+  return NextResponse.json({ items: list });
 }
 
 export async function POST(req: NextRequest) {
@@ -75,6 +147,7 @@ export async function POST(req: NextRequest) {
 
   // Already flaked — return current outcome
   if (uniqueExisting.includes(myPhone)) {
+    await rememberUserFlaked(myPhone, flakeKey);
     const isMutual = everyoneFlaked(uniqueExisting);
     const message = isMutual ? getRandomMessage() : "";
     return NextResponse.json({ mutual: isMutual, message });
@@ -82,6 +155,7 @@ export async function POST(req: NextRequest) {
 
   const updated = Array.from(new Set([...uniqueExisting, myPhone]));
   await redis.set(flakeKey, updated, { ex: SEVEN_DAYS });
+  await rememberUserFlaked(myPhone, flakeKey);
 
   const isMutual = everyoneFlaked(updated);
 
