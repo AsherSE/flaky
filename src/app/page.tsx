@@ -88,16 +88,65 @@ interface FlakeResult {
   message: string;
 }
 
+const TOKEN_KEY = "flaky-token";
+
 export default function Home() {
   const [step, setStep] = useState<Step>("phone");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
-  const [targetPhone, setTargetPhone] = useState("");
+  const [targetPhones, setTargetPhones] = useState<string[]>([""]);
   const [date, setDate] = useState(() => localYmd());
   const [token, setToken] = useState<string | null>(null);
   const [result, setResult] = useState<FlakeResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [sessionChecked, setSessionChecked] = useState(false);
+
+  useEffect(() => {
+    const stored =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem(TOKEN_KEY)
+        : null;
+    if (!stored) {
+      setSessionChecked(true);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/session", {
+          headers: { Authorization: `Bearer ${stored}` },
+        });
+        if (!res.ok) {
+          window.localStorage.removeItem(TOKEN_KEY);
+          return;
+        }
+        const data: { phone?: string } = await res.json();
+        if (cancelled) return;
+        setToken(stored);
+        if (data.phone) setPhone(data.phone);
+        setStep("flake");
+      } catch {
+        window.localStorage.removeItem(TOKEN_KEY);
+      } finally {
+        if (!cancelled) setSessionChecked(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const signOut = () => {
+    window.localStorage.removeItem(TOKEN_KEY);
+    setToken(null);
+    setPhone("");
+    setCode("");
+    setError("");
+    setStep("phone");
+  };
 
   const handleSendCode = async () => {
     setLoading(true);
@@ -130,7 +179,7 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Invalid code");
       setToken(data.token);
-      localStorage.setItem("flaky-token", data.token);
+      localStorage.setItem(TOKEN_KEY, data.token);
       setStep("flake");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -149,10 +198,16 @@ export default function Home() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ targetPhone, date }),
+        body: JSON.stringify({
+          targetPhones: targetPhones.map((t) => t.trim()).filter(Boolean),
+          date,
+        }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Something went wrong");
+      if (!res.ok) {
+        if (res.status === 401) signOut();
+        throw new Error(data.error || "Something went wrong");
+      }
       setResult(data);
       setStep("result");
     } catch (e: unknown) {
@@ -163,7 +218,7 @@ export default function Home() {
   };
 
   const resetFlake = () => {
-    setTargetPhone("");
+    setTargetPhones([""]);
     setDate(localYmd());
     setResult(null);
     setError("");
@@ -172,7 +227,7 @@ export default function Home() {
 
   return (
     <main className="h-dvh max-h-dvh overflow-y-auto overscroll-none bg-gradient-to-b from-[#faf8f5] to-[#f0ece6]">
-      <div className="flex min-h-full items-center justify-center p-4">
+      <div className="flex min-h-full items-start justify-center px-4 pb-4 pt-14">
         <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-[#3d3d3d] tracking-tight">
@@ -190,7 +245,11 @@ export default function Home() {
             </div>
           )}
 
-          {step === "phone" && (
+          {!sessionChecked ? (
+            <div className="py-14 text-center text-sm text-[#8a8a8a]">
+              Loading…
+            </div>
+          ) : step === "phone" ? (
             <form
               className="space-y-4"
               autoComplete="on"
@@ -228,9 +287,7 @@ export default function Home() {
                 {loading ? "Sending..." : "Send code"}
               </button>
             </form>
-          )}
-
-          {step === "code" && (
+          ) : step === "code" ? (
             <div className="space-y-4">
               <p className="text-sm text-[#8a8a8a]">
                 We sent a code to{" "}
@@ -272,30 +329,99 @@ export default function Home() {
                 Use a different number
               </button>
             </div>
-          )}
-
-          {step === "flake" && (
+          ) : step === "flake" ? (
             <div className="space-y-4">
-              <label className="block" htmlFor="flaky-their-phone">
-                <span className="text-sm font-medium text-[#5a5a5a]">
-                  Their phone number
-                </span>
-                <input
-                  id="flaky-their-phone"
-                  name="recipient-tel"
-                  type="tel"
-                  autoComplete="section-other tel"
-                  inputMode="tel"
-                  value={targetPhone}
-                  onChange={(e) => setTargetPhone(e.target.value)}
-                  placeholder="+1 (555) 987-6543"
-                  className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
+              <p className="text-xs text-[#8a8a8a] text-center">
+                Signed in with{" "}
+                <span className="font-medium text-[#6a6a6a]">{phone}</span>
+              </p>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-[#5a5a5a]">
+                    Their phone numbers
+                  </span>
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() =>
+                      setTargetPhones((prev) => [...prev, ""])
+                    }
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[#81b29a] text-[#5a7d6c] text-xl font-medium leading-none hover:bg-[#e8f2ec] active:bg-[#dceee4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    aria-label="Add another number"
+                  >
+                    +
+                  </button>
+                </div>
+                {targetPhones.map((targetPhone, index) => (
+                  <div key={index} className="space-y-2">
+                    <div className="flex gap-2 items-end">
+                      <label
+                        className="block flex-1 min-w-0"
+                        htmlFor={`flaky-their-phone-${index}`}
+                      >
+                        <span className="text-xs text-[#8a8a8a]">
+                          {targetPhones.length > 1
+                            ? `Person ${index + 1}`
+                            : "Their number"}
+                        </span>
+                        <input
+                          id={`flaky-their-phone-${index}`}
+                          name={
+                            index === 0
+                              ? "recipient-tel"
+                              : `recipient-tel-${index}`
+                          }
+                          type="tel"
+                          autoComplete="section-other tel"
+                          inputMode="tel"
+                          value={targetPhone}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setTargetPhones((prev) => {
+                              const next = [...prev];
+                              next[index] = v;
+                              return next;
+                            });
+                          }}
+                          placeholder="+1 (555) 987-6543"
+                          className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
+                        />
+                      </label>
+                      {targetPhones.length > 1 && (
+                        <button
+                          type="button"
+                          disabled={loading}
+                          onClick={() =>
+                            setTargetPhones((prev) =>
+                              prev.filter((_, i) => i !== index)
+                            )
+                          }
+                          className="shrink-0 py-2 px-2 text-sm text-[#8a8a8a] hover:text-[#c05a3f] disabled:opacity-50"
+                          aria-label="Remove this number"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <FillFromContactsButton
+                  onFilled={(value) =>
+                    setTargetPhones((prev) => {
+                      const empty = prev.findIndex((t) => !t.trim());
+                      if (empty >= 0) {
+                        const next = [...prev];
+                        next[empty] = value;
+                        return next;
+                      }
+                      const next = [...prev];
+                      next[next.length - 1] = value;
+                      return next;
+                    })
+                  }
+                  disabled={loading}
                 />
-              </label>
-              <FillFromContactsButton
-                onFilled={setTargetPhone}
-                disabled={loading}
-              />
+              </div>
               <label className="block">
                 <span className="text-sm font-medium text-[#5a5a5a]">
                   What day?
@@ -310,15 +436,24 @@ export default function Home() {
               </label>
               <button
                 onClick={handleFlake}
-                disabled={loading || !targetPhone.trim() || !date}
+                disabled={
+                  loading ||
+                  !targetPhones.some((t) => t.trim()) ||
+                  !date
+                }
                 className="w-full py-3 bg-[#e07a5f] text-white rounded-xl font-medium hover:bg-[#d06a4f] active:bg-[#c05a3f] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {loading ? "..." : "I want to cancel"}
               </button>
+              <button
+                type="button"
+                onClick={signOut}
+                className="w-full py-2 text-sm text-[#8a8a8a] hover:text-[#5a5a5a] transition-colors"
+              >
+                Use a different number
+              </button>
             </div>
-          )}
-
-          {step === "result" && result && (
+          ) : step === "result" && result ? (
             <div className="text-center space-y-4 py-4">
               {result.mutual ? (
                 <>
@@ -352,7 +487,7 @@ export default function Home() {
                 {result.mutual ? "Nice" : "Done"}
               </button>
             </div>
-          )}
+          ) : null}
         </div>
 
         <div className="flex justify-center mt-6">

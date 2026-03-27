@@ -6,6 +6,25 @@ import { sendSMS } from "@/lib/twilio";
 
 const SEVEN_DAYS = 7 * 24 * 60 * 60;
 
+function participantSetFromBody(body: unknown): string[] | null {
+  if (!body || typeof body !== "object") return null;
+  const o = body as Record<string, unknown>;
+  const rawList = Array.isArray(o.targetPhones)
+    ? o.targetPhones
+    : o.targetPhone != null
+      ? [o.targetPhone]
+      : null;
+  if (!rawList) return null;
+
+  const normalized = new Set<string>();
+  for (const raw of rawList) {
+    if (typeof raw !== "string") continue;
+    const n = normalizePhone(raw);
+    if (n) normalized.add(n);
+  }
+  return normalized.size ? Array.from(normalized) : null;
+}
+
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
@@ -18,17 +37,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Session expired" }, { status: 401 });
   }
 
-  const { targetPhone: rawTarget, date } = await req.json();
-  const targetPhone = normalizePhone(rawTarget);
+  const body = await req.json();
+  const { date } = body;
+  const targets = participantSetFromBody(body);
 
-  if (!targetPhone) {
+  if (!targets?.length) {
     return NextResponse.json(
-      { error: "Enter a valid phone number" },
+      { error: "Enter at least one valid phone number" },
       { status: 400 }
     );
   }
 
-  if (targetPhone === myPhone) {
+  if (targets.includes(myPhone)) {
     return NextResponse.json(
       { error: "You can't flake on yourself (but we respect the honesty)" },
       { status: 400 }
@@ -42,38 +62,43 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Canonical key: sorted phones so A->B and B->A share the same record
-  const phones = [myPhone, targetPhone].sort();
-  const flakeKey = `flake:${phones[0]}:${phones[1]}:${date}`;
+  // Canonical key: sorted phones so the same group shares one record no matter who submits
+  const participants = Array.from(new Set([myPhone, ...targets])).sort();
+  const flakeKey = `flake:${participants.join(":")}:${date}`;
 
-  const existing = await redis.get<string[]>(flakeKey);
+  const existing = (await redis.get<string[]>(flakeKey)) ?? [];
+  const uniqueExisting = Array.from(new Set(existing));
 
-  // Already flaked — check if it became mutual since
-  if (existing && existing.includes(myPhone)) {
-    const isMutual = existing.includes(targetPhone);
-    const message = getRandomMessage();
+  function everyoneFlaked(flaked: string[]) {
+    return participants.every((p) => flaked.includes(p));
+  }
+
+  // Already flaked — return current outcome
+  if (uniqueExisting.includes(myPhone)) {
+    const isMutual = everyoneFlaked(uniqueExisting);
+    const message = isMutual ? getRandomMessage() : "";
     return NextResponse.json({ mutual: isMutual, message });
   }
 
-  // The other person already flaked — it's a match!
-  if (existing && existing.includes(targetPhone)) {
+  const updated = Array.from(new Set([...uniqueExisting, myPhone]));
+  await redis.set(flakeKey, updated, { ex: SEVEN_DAYS });
+
+  const isMutual = everyoneFlaked(updated);
+
+  if (isMutual) {
     const message = getRandomMessage();
-
-    await redis.set(flakeKey, [...existing, myPhone], { ex: SEVEN_DAYS });
-
-    try {
-      await sendSMS(
-        targetPhone,
-        `${message}\n\nYour plans for ${date} just got cancelled — and honestly, they wanted to cancel too. Guilt-free.\n\n— flaky`
-      );
-    } catch (e) {
-      console.error("Failed to send notification SMS:", e);
-    }
-
+    const smsBody = `${message}\n\nYour plans for ${date} just got cancelled — and honestly, everyone wanted out. Guilt-free.\n\n— flaky`;
+    await Promise.all(
+      participants.map(async (to) => {
+        try {
+          await sendSMS(to, smsBody);
+        } catch (e) {
+          console.error("Failed to send notification SMS:", e);
+        }
+      })
+    );
     return NextResponse.json({ mutual: true, message });
   }
 
-  // First to flake — store it secretly
-  await redis.set(flakeKey, [myPhone], { ex: SEVEN_DAYS });
   return NextResponse.json({ mutual: false, message: "" });
 }
