@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
-import { profileKey, PROFILE_TTL_SEC, sanitizeFirstName } from "@/lib/profile";
+import { profileKey, PROFILE_TTL_SEC, profileNameFromInput } from "@/lib/profile";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +19,13 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const name = sanitizeFirstName(body?.firstName);
+  const raw: unknown =
+    typeof body?.name === "string"
+      ? body.name
+      : typeof body?.firstName === "string"
+        ? body.firstName
+        : undefined;
+  const name = profileNameFromInput(raw);
 
   const key = profileKey(phone);
   if (name) {
@@ -28,5 +34,5 @@ export async function POST(req: NextRequest) {
     await redis.del(key);
   }
 
-  return NextResponse.json({ firstName: name ?? "" });
+  return NextResponse.json({ name: name ?? "" });
 }

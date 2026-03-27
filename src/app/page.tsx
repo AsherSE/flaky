@@ -106,7 +106,7 @@ export default function Home() {
   const [targetPhones, setTargetPhones] = useState<string[]>([""]);
   const [date, setDate] = useState(() => localYmd());
   const [profileNames, setProfileNames] = useState<Record<string, string>>({});
-  const [firstName, setFirstName] = useState("");
+  const [profileName, setProfileName] = useState("");
   const [onboardingName, setOnboardingName] = useState("");
   const [profileEditOpen, setProfileEditOpen] = useState(false);
   const [profileDraft, setProfileDraft] = useState("");
@@ -139,13 +139,12 @@ export default function Home() {
           window.localStorage.removeItem(TOKEN_KEY);
           return;
         }
-        const data: { phone?: string; firstName?: string } = await res.json();
+        const data: { phone?: string; name?: string } = await res.json();
         if (cancelled) return;
         setToken(stored);
         if (data.phone) setPhone(data.phone);
-        const fn =
-          typeof data.firstName === "string" ? data.firstName.trim() : "";
-        setFirstName(fn);
+        const fn = typeof data.name === "string" ? data.name.trim() : "";
+        setProfileName(fn);
         setOnboardingName(fn);
         const skippedName =
           typeof window !== "undefined" &&
@@ -205,7 +204,7 @@ export default function Home() {
     setCode("");
     setError("");
     setProfileNames({});
-    setFirstName("");
+    setProfileName("");
     setOnboardingName("");
     setProfileEditOpen(false);
     setProfileDraft("");
@@ -233,7 +232,7 @@ export default function Home() {
     }
   };
 
-  const persistFirstName = async (name: string) => {
+  const persistProfileName = async (name: string) => {
     const authToken =
       token ??
       (typeof window !== "undefined"
@@ -246,13 +245,12 @@ export default function Home() {
         "Content-Type": "application/json",
         Authorization: `Bearer ${authToken}`,
       },
-      body: JSON.stringify({ firstName: name }),
+      body: JSON.stringify({ name }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Could not save your name");
-    const saved =
-      typeof data.firstName === "string" ? data.firstName.trim() : "";
-    setFirstName(saved);
+    const saved = typeof data.name === "string" ? data.name.trim() : "";
+    setProfileName(saved);
     return saved;
   };
 
@@ -275,12 +273,10 @@ export default function Home() {
         headers: { Authorization: `Bearer ${newToken}` },
       });
       if (!sessionRes.ok) throw new Error("Session check failed");
-      const sessionData: { firstName?: string } = await sessionRes.json();
+      const sessionData: { name?: string } = await sessionRes.json();
       const fn =
-        typeof sessionData.firstName === "string"
-          ? sessionData.firstName.trim()
-          : "";
-      setFirstName(fn);
+        typeof sessionData.name === "string" ? sessionData.name.trim() : "";
+      setProfileName(fn);
       setOnboardingName(fn);
       const skippedName =
         typeof window !== "undefined" &&
@@ -298,12 +294,12 @@ export default function Home() {
     setError("");
     const trimmed = onboardingName.trim();
     if (!trimmed) {
-      setError("Add your first name to continue, or tap Skip for now.");
+      setError("Add your name to continue, or tap Skip for now.");
       return;
     }
     setLoading(true);
     try {
-      await persistFirstName(trimmed);
+      await persistProfileName(trimmed);
       window.localStorage.removeItem(SKIP_NAME_KEY);
       setStep("flake");
     } catch (e: unknown) {
@@ -323,7 +319,7 @@ export default function Home() {
     setError("");
     setLoading(true);
     try {
-      await persistFirstName(profileDraft);
+      await persistProfileName(profileDraft);
       if (profileDraft.trim()) {
         window.localStorage.removeItem(SKIP_NAME_KEY);
       }
@@ -418,7 +414,7 @@ export default function Home() {
   return (
     <main className="h-dvh max-h-dvh overflow-y-auto overscroll-none bg-gradient-to-b from-[#faf8f5] to-[#f0ece6]">
       <div className="flex min-h-full items-start justify-center px-4 pb-4 pt-14">
-        <div className="w-full max-w-sm">
+        <div className="w-full min-w-0 max-w-sm">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-0">
             <Image
@@ -540,28 +536,32 @@ export default function Home() {
               <p className="text-sm text-[#6a6a6a] text-center leading-relaxed">
                 You&apos;re in. What should we call you?
               </p>
-              <p className="text-xs text-[#8a8a8a] text-center">
+              <p className="w-full min-w-0 text-xs text-[#8a8a8a] text-center leading-relaxed break-words">
                 Signed in as{" "}
                 <span className="font-medium text-[#6a6a6a]">
                   {displayMaskedSelf(phone)}
                 </span>
               </p>
-              <label className="block" htmlFor="flaky-onboarding-given-name">
+              <label className="block" htmlFor="flaky-onboarding-name">
                 <span className="text-sm font-medium text-[#5a5a5a]">
-                  First name
+                  Name
                 </span>
                 <input
-                  id="flaky-onboarding-given-name"
-                  name="given-name"
+                  id="flaky-onboarding-name"
+                  name="name"
                   type="text"
-                  autoComplete="given-name"
+                  autoComplete="name"
                   enterKeyHint="done"
                   value={onboardingName}
                   onChange={(e) => setOnboardingName(e.target.value)}
-                  placeholder="Sam"
+                  placeholder="Jane Doe"
                   className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
                 />
               </label>
+              <p className="text-xs text-[#a3a3a3] text-center leading-snug">
+                Autofill is fine — we&apos;ll display first name + last initial
+                (e.g. Jane D.).
+              </p>
               <button
                 type="submit"
                 disabled={loading || !onboardingName.trim()}
@@ -585,13 +585,13 @@ export default function Home() {
                   <p className="text-xs font-medium text-[#5a5a5a]">
                     Your name / number
                   </p>
-                  <label className="block" htmlFor="flaky-profile-given-name">
-                    <span className="text-xs text-[#8a8a8a]">First name</span>
+                  <label className="block" htmlFor="flaky-profile-name">
+                    <span className="text-xs text-[#8a8a8a]">Name</span>
                     <input
-                      id="flaky-profile-given-name"
-                      name="given-name"
+                      id="flaky-profile-name"
+                      name="name"
                       type="text"
-                      autoComplete="given-name"
+                      autoComplete="name"
                       value={profileDraft}
                       onChange={(e) => setProfileDraft(e.target.value)}
                       className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-base text-[#3d3d3d] bg-transparent"
@@ -618,7 +618,7 @@ export default function Home() {
                       disabled={loading}
                       onClick={() => {
                         setProfileEditOpen(false);
-                        setProfileDraft(firstName);
+                        setProfileDraft(profileName);
                       }}
                       className="flex-1 py-2.5 border border-[#ddd] text-[#5a5a5a] rounded-xl text-sm font-medium hover:bg-white disabled:opacity-50"
                     >
@@ -627,26 +627,26 @@ export default function Home() {
                   </div>
                 </div>
               ) : (
-                <p className="text-xs text-[#8a8a8a] text-center leading-relaxed">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProfileDraft(profileName);
+                    setProfileEditOpen(true);
+                    setError("");
+                  }}
+                  className="group w-full max-w-full min-w-0 rounded-lg px-1 py-1.5 text-center text-xs leading-relaxed text-[#8a8a8a] transition-colors hover:bg-[#faf8f5] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#e07a5f]/40"
+                >
                   <span className="text-[#8a8a8a]">Signed in as </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setProfileDraft(firstName);
-                      setProfileEditOpen(true);
-                      setError("");
-                    }}
-                    className="font-medium text-[#6a6a6a] underline decoration-[#ccc] underline-offset-2 hover:text-[#e07a5f] hover:decoration-[#e07a5f]"
-                  >
-                    {firstName ? (
+                  <span className="whitespace-normal break-words font-medium text-[#6a6a6a] underline decoration-[#ccc] underline-offset-2 transition-colors group-hover:text-[#e07a5f] group-hover:decoration-[#e07a5f]">
+                    {profileName ? (
                       <>
-                        {firstName}
-                        <span className="font-normal text-[#a3a3a3]"> · </span>
+                        {profileName}
+                        <span className="font-normal text-[#a3a3a3] group-hover:text-[#e07a5f]/70"> · </span>
                       </>
                     ) : null}
                     {displayMaskedSelf(phone)}
-                  </button>
-                </p>
+                  </span>
+                </button>
               )}
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
@@ -764,13 +764,13 @@ export default function Home() {
                   <p className="text-xs font-medium text-[#5a5a5a]">
                     Your name / number
                   </p>
-                  <label className="block" htmlFor="flaky-profile-given-name-result">
-                    <span className="text-xs text-[#8a8a8a]">First name</span>
+                  <label className="block" htmlFor="flaky-profile-name-result">
+                    <span className="text-xs text-[#8a8a8a]">Name</span>
                     <input
-                      id="flaky-profile-given-name-result"
-                      name="given-name"
+                      id="flaky-profile-name-result"
+                      name="name"
                       type="text"
-                      autoComplete="given-name"
+                      autoComplete="name"
                       value={profileDraft}
                       onChange={(e) => setProfileDraft(e.target.value)}
                       className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-base text-[#3d3d3d] bg-transparent"
@@ -796,7 +796,7 @@ export default function Home() {
                       disabled={loading}
                       onClick={() => {
                         setProfileEditOpen(false);
-                        setProfileDraft(firstName);
+                        setProfileDraft(profileName);
                       }}
                       className="flex-1 py-2.5 border border-[#ddd] text-[#5a5a5a] rounded-xl text-sm font-medium hover:bg-white disabled:opacity-50"
                     >
@@ -805,26 +805,26 @@ export default function Home() {
                   </div>
                 </div>
               ) : (
-                <p className="text-xs text-[#8a8a8a] text-center leading-relaxed mb-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProfileDraft(profileName);
+                    setProfileEditOpen(true);
+                    setError("");
+                  }}
+                  className="group mb-2 w-full max-w-full min-w-0 rounded-lg px-1 py-1.5 text-center text-xs leading-relaxed text-[#8a8a8a] transition-colors hover:bg-[#faf8f5] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#e07a5f]/40"
+                >
                   <span className="text-[#8a8a8a]">Signed in as </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setProfileDraft(firstName);
-                      setProfileEditOpen(true);
-                      setError("");
-                    }}
-                    className="font-medium text-[#6a6a6a] underline decoration-[#ccc] underline-offset-2 hover:text-[#e07a5f] hover:decoration-[#e07a5f]"
-                  >
-                    {firstName ? (
+                  <span className="whitespace-normal break-words font-medium text-[#6a6a6a] underline decoration-[#ccc] underline-offset-2 transition-colors group-hover:text-[#e07a5f] group-hover:decoration-[#e07a5f]">
+                    {profileName ? (
                       <>
-                        {firstName}
-                        <span className="font-normal text-[#a3a3a3]"> · </span>
+                        {profileName}
+                        <span className="font-normal text-[#a3a3a3] group-hover:text-[#e07a5f]/70"> · </span>
                       </>
                     ) : null}
                     {displayMaskedSelf(phone)}
-                  </button>
-                </p>
+                  </span>
+                </button>
               )}
               {result.mutual ? (
                 <>

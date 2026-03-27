@@ -20,10 +20,10 @@ export async function GET(request: NextRequest) {
 
   await redis.set(`session:${sessionToken}`, phone, { ex: SESSION_TTL_SEC });
 
-  const firstName = await redis.get<string>(profileKey(phone));
+  const name = await redis.get<string>(profileKey(phone));
 
   return NextResponse.json({
     phone,
-    firstName: typeof firstName === "string" ? firstName : "",
+    name: typeof name === "string" ? name : "",
   });
 }
