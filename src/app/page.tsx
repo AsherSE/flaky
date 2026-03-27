@@ -96,13 +96,29 @@ function fnv1a32(s: string): number {
   return h >>> 0;
 }
 
-/** Stable saturated color from E.164 (identicon-style). */
+/** Pastel, Japanese-adjacent palette — stable pick per E.164 (identicon-style). */
+const PASTEL_JP_SLICE_COLORS = [
+  "#f2b5c4", // sakura rose
+  "#b8d6eb", // 空色 soft sky
+  "#c8e6d4", // 若葉 mint
+  "#e5d0ef", // 藤 wisteria mist
+  "#fce8b8", // 生成り kinari gold
+  "#f0c4a8", // 桃饅頭 peach
+  "#a8c8e8", // 浅葱 asagi
+  "#dce8c4", // 若竹 young bamboo
+  "#f0c8c8", // 桜貝 shell pink
+  "#cad4f2", // 桔梗 pale indigo
+  "#f2d8c8", // 砥粉色 shell terracotta
+  "#b8e0d8", // 青磁 celadon whisper
+  "#f5e8a8", // 淡黄 narcissus
+  "#d8cce8", // 薄藤 pale wisteria
+  "#c8e0e8", // 水浅葱 mist teal
+  "#f0c8dc", // 撫子 blush
+] as const;
+
 function identiconColorFromPhone(e164: string): string {
   const h = fnv1a32(e164);
-  const hue = h % 360;
-  const sat = 58 + (h >>> 8) % 22;
-  const light = 47 + (h >>> 16) % 14;
-  return `hsl(${hue} ${sat}% ${light}%)`;
+  return PASTEL_JP_SLICE_COLORS[h % PASTEL_JP_SLICE_COLORS.length]!;
 }
 
 function cancellationPieConicGradient(
@@ -994,7 +1010,8 @@ export default function Home() {
         {token &&
         (step === "flake" || step === "result") &&
         myCancellations.length > 0 ? (
-          <ul className="mt-8 space-y-7">
+          <div className="mt-8 w-full max-w-[20rem] mx-auto">
+          <ul className="space-y-7">
             {myCancellations.map((item) => {
               const rowKey = myCancellationRowKey(item);
               const undoBusy = undoingFlakeKey === rowKey;
@@ -1065,6 +1082,7 @@ export default function Home() {
               );
             })}
           </ul>
+          </div>
         ) : null}
 
         <div className="flex justify-center mt-6">
