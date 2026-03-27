@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
-import { normalizePhone } from "@/lib/phone";
+import { normalizePhone, resolvePhoneRegion, type CountryCode } from "@/lib/phone";
 import { getRandomMessage } from "@/lib/messages";
 import { sendSMS } from "@/lib/twilio";
 import { profileKey } from "@/lib/profile";
@@ -32,7 +32,10 @@ async function rememberUserFlaked(phone: string, flakeKey: string) {
   await redis.expire(userFlakesIndexKey(phone), SEVEN_DAYS);
 }
 
-function targetsFromBody(body: unknown): string[] | null {
+function targetsFromBody(
+  body: unknown,
+  defaultCountry: CountryCode
+): string[] | null {
   if (!body || typeof body !== "object") return null;
   const o = body as Record<string, unknown>;
 
@@ -42,7 +45,7 @@ function targetsFromBody(body: unknown): string[] | null {
       if (!row || typeof row !== "object") continue;
       const r = row as Record<string, unknown>;
       const phoneRaw = typeof r.phone === "string" ? r.phone : "";
-      const n = normalizePhone(phoneRaw);
+      const n = normalizePhone(phoneRaw, defaultCountry);
       if (n) normalized.add(n);
     }
     return normalized.size ? Array.from(normalized) : null;
@@ -58,7 +61,7 @@ function targetsFromBody(body: unknown): string[] | null {
   const normalized = new Set<string>();
   for (const raw of rawList) {
     if (typeof raw !== "string") continue;
-    const n = normalizePhone(raw);
+    const n = normalizePhone(raw, defaultCountry);
     if (n) normalized.add(n);
   }
   return normalized.size ? Array.from(normalized) : null;
@@ -148,7 +151,11 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const { date } = body;
-  const targets = targetsFromBody(body);
+  const region = resolvePhoneRegion(
+    body?.defaultCountry,
+    req.headers.get("accept-language")
+  );
+  const targets = targetsFromBody(body, region);
   if (!targets?.length) {
     return NextResponse.json(
       { error: "Enter at least one valid phone number" },
@@ -211,4 +218,68 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ mutual: false, message: "" });
+}
+
+export async function DELETE(req: NextRequest) {
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const sessionToken = authHeader.slice(7);
+  const myPhone = await redis.get<string>(`session:${sessionToken}`);
+  if (!myPhone) {
+    return NextResponse.json({ error: "Session expired" }, { status: 401 });
+  }
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+  }
+
+  const o = body as Record<string, unknown>;
+  const date = typeof o.date === "string" ? o.date.trim() : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return NextResponse.json({ error: "Invalid date" }, { status: 400 });
+  }
+
+  const rawParts = Array.isArray(o.participants) ? o.participants : null;
+  if (!rawParts?.length) {
+    return NextResponse.json({ error: "Invalid participants" }, { status: 400 });
+  }
+
+  const sorted = Array.from(
+    new Set(
+      rawParts
+        .map((p) => (typeof p === "string" ? normalizePhone(p) : ""))
+        .filter(Boolean)
+    )
+  ).sort();
+
+  if (sorted.length < 2 || !sorted.includes(myPhone)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const flakeKey = `flake:${sorted.join(":")}:${date}`;
+  const raw = await redis.get<string[]>(flakeKey);
+  if (!Array.isArray(raw) || !raw.includes(myPhone)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const updated = raw.filter((p) => p !== myPhone);
+  await redis.srem(userFlakesIndexKey(myPhone), flakeKey);
+
+  if (updated.length === 0) {
+    await redis.del(flakeKey);
+  } else {
+    await redis.set(flakeKey, updated, { ex: SEVEN_DAYS });
+  }
+
+  return NextResponse.json({ ok: true });
 }

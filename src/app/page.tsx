@@ -1,8 +1,12 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
-import { normalizePhone } from "@/lib/phone";
+import { useEffect, useLayoutEffect, useState } from "react";
+import {
+  normalizePhone,
+  inferPhoneRegionFromNavigator,
+  type CountryCode,
+} from "@/lib/phone";
 
 /** Calendar date in local timezone (YYYY-MM-DD). Avoids UTC vs local mismatch from toISOString(). */
 function localYmd(d: Date = new Date()): string {
@@ -53,9 +57,10 @@ function maskParticipantPhone(participantE164: string): string {
 function formatParticipantForList(
   rawSelf: string,
   participantE164: string,
-  profileNames?: Record<string, string>
+  profileNames?: Record<string, string>,
+  defaultCountry: CountryCode = "US"
 ) {
-  const self = normalizePhone(rawSelf);
+  const self = normalizePhone(rawSelf, defaultCountry);
   if (self && self === participantE164) return "You";
   const masked = maskParticipantPhone(participantE164);
   const saved = profileNames?.[participantE164]?.trim();
@@ -63,8 +68,11 @@ function formatParticipantForList(
   return masked;
 }
 
-function displayMaskedSelf(rawPhone: string): string {
-  const e164 = normalizePhone(rawPhone);
+function displayMaskedSelf(
+  rawPhone: string,
+  defaultCountry: CountryCode = "US"
+): string {
+  const e164 = normalizePhone(rawPhone, defaultCountry);
   if (e164) return maskParticipantPhone(e164);
   return rawPhone.trim() || "—";
 }
@@ -87,18 +95,13 @@ function CancelProgressPie({
   const pct = Math.min(100, Math.round((cancelledCount / safeTotal) * 100));
   return (
     <div
-      className="relative h-11 w-11 shrink-0 rounded-full bg-[#ece8e2]"
+      className="h-11 w-11 shrink-0 rounded-full border border-[#e5e0d8] shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]"
+      style={{
+        background: `conic-gradient(#e07a5f 0% ${pct}%, #ece8e2 ${pct}% 100%)`,
+      }}
       role="img"
       aria-label={youAndMoreWantToCancel(cancelledCount)}
-    >
-      <div
-        className="absolute inset-0 rounded-full"
-        style={{
-          background: `conic-gradient(#e07a5f ${pct}%, transparent 0)`,
-        }}
-      />
-      <div className="absolute inset-[3px] rounded-full bg-white border border-[#eee]" />
-    </div>
+    />
   );
 }
 
@@ -125,6 +128,12 @@ export default function Home() {
   const [myCancellations, setMyCancellations] = useState<MyCancellationItem[]>(
     []
   );
+  const [undoingFlakeKey, setUndoingFlakeKey] = useState<string | null>(null);
+  const [phoneRegion, setPhoneRegion] = useState<CountryCode>("US");
+
+  useLayoutEffect(() => {
+    setPhoneRegion(inferPhoneRegionFromNavigator());
+  }, []);
 
   useEffect(() => {
     const stored =
@@ -227,7 +236,7 @@ export default function Home() {
       const res = await fetch("/api/send-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({ phone, defaultCountry: phoneRegion }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send code");
@@ -268,7 +277,7 @@ export default function Home() {
       const res = await fetch("/api/verify-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, code }),
+        body: JSON.stringify({ phone, code, defaultCountry: phoneRegion }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Invalid code");
@@ -280,7 +289,11 @@ export default function Home() {
         headers: { Authorization: `Bearer ${newToken}` },
       });
       if (!sessionRes.ok) throw new Error("Session check failed");
-      const sessionData: { name?: string } = await sessionRes.json();
+      const sessionData: { name?: string; phone?: string } =
+        await sessionRes.json();
+      if (typeof sessionData.phone === "string" && sessionData.phone) {
+        setPhone(sessionData.phone);
+      }
       const fn =
         typeof sessionData.name === "string" ? sessionData.name.trim() : "";
       setProfileName(fn);
@@ -340,11 +353,11 @@ export default function Home() {
 
   const handleFlake = async () => {
     setError("");
-    const self = normalizePhone(phone);
+    const self = normalizePhone(phone, phoneRegion);
     const targetsTrimmed = targetPhones.map((t) => t.trim()).filter(Boolean);
     if (
       self &&
-      targetsTrimmed.some((t) => normalizePhone(t) === self)
+      targetsTrimmed.some((t) => normalizePhone(t, phoneRegion) === self)
     ) {
       setError("That number is yours — add the other person's phone.");
       return;
@@ -361,6 +374,7 @@ export default function Home() {
         body: JSON.stringify({
           targetPhones: targetsTrimmed,
           date,
+          defaultCountry: phoneRegion,
         }),
       });
       const data = await res.json();
@@ -416,6 +430,42 @@ export default function Home() {
     setError("");
     setProfileEditOpen(false);
     setStep("flake");
+  };
+
+  function myCancellationRowKey(item: MyCancellationItem) {
+    return `${item.date}:${(item.participants ?? []).join("|")}`;
+  }
+
+  const handleUndoFlake = async (item: MyCancellationItem) => {
+    const participants = item.participants ?? [];
+    if (!token || participants.length < 2) return;
+    const rowKey = myCancellationRowKey(item);
+    setUndoingFlakeKey(rowKey);
+    setError("");
+    try {
+      const res = await fetch("/api/flake", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ date: item.date, participants }),
+      });
+      const data: { error?: string } = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 401) signOut();
+        throw new Error(
+          typeof data.error === "string" ? data.error : "Could not update"
+        );
+      }
+      setMyCancellations((prev) =>
+        prev.filter((x) => myCancellationRowKey(x) !== rowKey)
+      );
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setUndoingFlakeKey(null);
+    }
   };
 
   return (
@@ -477,10 +527,14 @@ export default function Home() {
                   inputMode="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+1 (555) 123-4567"
+                  placeholder="Your mobile number"
                   className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
                 />
               </label>
+              <p className="text-xs text-[#a3a3a3] leading-snug">
+                Country code is optional — use your local number, or include + and
+                country code (e.g. +44…).
+              </p>
               <button
                 type="submit"
                 disabled={loading || !phone.trim()}
@@ -546,7 +600,7 @@ export default function Home() {
               <p className="w-full min-w-0 text-xs text-[#8a8a8a] text-center leading-relaxed break-words">
                 Signed in as{" "}
                 <span className="font-medium text-[#6a6a6a]">
-                  {displayMaskedSelf(phone)}
+                  {displayMaskedSelf(phone, phoneRegion)}
                 </span>
               </p>
               <label className="block" htmlFor="flaky-onboarding-name">
@@ -607,7 +661,7 @@ export default function Home() {
                   <p className="text-xs text-[#8a8a8a] leading-relaxed">
                     Number:{" "}
                     <span className="text-[#6a6a6a]">
-                      {displayMaskedSelf(phone)}
+                      {displayMaskedSelf(phone, phoneRegion)}
                     </span>
                     {" · "}
                     <button
@@ -659,7 +713,7 @@ export default function Home() {
                         <span className="font-normal text-[#a3a3a3] group-hover:text-[#e07a5f]/70"> · </span>
                       </>
                     ) : null}
-                    {displayMaskedSelf(phone)}
+                    {displayMaskedSelf(phone, phoneRegion)}
                   </span>
                 </button>
               )}
@@ -719,7 +773,7 @@ export default function Home() {
                             return next;
                           });
                         }}
-                        placeholder="+1 (555) 987-6543"
+                        placeholder="Their mobile number"
                         className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
                       />
                     </label>
@@ -787,7 +841,7 @@ export default function Home() {
                   <p className="text-xs text-[#8a8a8a] leading-relaxed">
                     Number:{" "}
                     <span className="text-[#6a6a6a]">
-                      {displayMaskedSelf(phone)}
+                      {displayMaskedSelf(phone, phoneRegion)}
                     </span>
                     {" · "}
                     <button
@@ -839,7 +893,7 @@ export default function Home() {
                         <span className="font-normal text-[#a3a3a3] group-hover:text-[#e07a5f]/70"> · </span>
                       </>
                     ) : null}
-                    {displayMaskedSelf(phone)}
+                    {displayMaskedSelf(phone, phoneRegion)}
                   </span>
                 </button>
               )}
@@ -882,44 +936,73 @@ export default function Home() {
         (step === "flake" || step === "result") &&
         myCancellations.length > 0 ? (
           <ul className="mt-8 space-y-7">
-            {myCancellations.map((item) => (
-              <li
-                key={`${item.date}:${(item.participants ?? []).join("|")}`}
-                className="flex items-start gap-3"
-              >
-                <CancelProgressPie
-                  cancelledCount={item.cancelledCount}
-                  totalPeople={item.totalPeople}
-                />
-                <div className="min-w-0 flex-1 pt-0.5">
-                  <p className="text-sm font-medium text-[#3d3d3d]">
-                    {formatPlanDate(item.date)}
-                  </p>
-                  <p className="text-xs text-[#8a8a8a] mt-0.5 leading-relaxed">
-                    {item.mutual ? (
-                      <span className="text-[#5a7d6c]">
-                        Everyone wanted out — you&apos;re covered
-                      </span>
-                    ) : (
-                      <>{youAndMoreWantToCancel(item.cancelledCount)}</>
-                    )}
-                  </p>
-                  <p className="text-xs text-[#6a6a6a] mt-1.5 leading-relaxed">
-                    {[...(item.participants ?? [])]
-                      .sort((a, b) => {
-                        const self = normalizePhone(phone);
+            {myCancellations.map((item) => {
+              const rowKey = myCancellationRowKey(item);
+              const undoBusy = undoingFlakeKey === rowKey;
+              return (
+                <li
+                  key={rowKey}
+                  className="flex items-start gap-3"
+                >
+                  <CancelProgressPie
+                    cancelledCount={item.cancelledCount}
+                    totalPeople={item.totalPeople}
+                  />
+                  <div className="min-w-0 flex-1 pt-0.5">
+                    <p className="text-sm font-medium text-[#3d3d3d]">
+                      {formatPlanDate(item.date)}
+                    </p>
+                    <p className="text-xs text-[#8a8a8a] mt-0.5 leading-relaxed">
+                      {item.mutual ? (
+                        <span className="text-[#5a7d6c]">
+                          Everyone wanted out — you&apos;re covered
+                        </span>
+                      ) : (
+                        <>{youAndMoreWantToCancel(item.cancelledCount)}</>
+                      )}
+                    </p>
+                    <p className="text-xs text-[#6a6a6a] mt-1.5 leading-relaxed">
+                      {[...(item.participants ?? [])]
+                        .sort((a, b) => {
+                        const self = normalizePhone(phone, phoneRegion);
                         const ay = self && a === self ? 0 : 1;
                         const by = self && b === self ? 0 : 1;
                         return ay - by || a.localeCompare(b);
                       })
                       .map((p) =>
-                        formatParticipantForList(phone, p, profileNames)
+                        formatParticipantForList(
+                          phone,
+                          p,
+                          profileNames,
+                          phoneRegion
+                        )
                       )
-                      .join(" · ")}
-                  </p>
-                </div>
-              </li>
-            ))}
+                        .join(" · ")}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={loading || undoBusy}
+                    onClick={() => void handleUndoFlake(item)}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[#81b29a] text-[#5a7d6c] hover:bg-[#e8f2ec] active:bg-[#dceee4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors mt-0.5"
+                    aria-label="Take back — I do not want to cancel anymore"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2.5}
+                      strokeLinecap="round"
+                      className="h-5 w-5"
+                      aria-hidden
+                    >
+                      <path d="M6 6l12 12M18 6L6 18" />
+                    </svg>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         ) : null}
 

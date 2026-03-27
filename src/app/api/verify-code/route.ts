@@ -1,13 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { normalizePhone } from "@/lib/phone";
+import { normalizePhone, resolvePhoneRegion } from "@/lib/phone";
 import { checkVerification } from "@/lib/twilio";
 import { redis } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-  const { phone: rawPhone, code } = await req.json();
-  const phone = normalizePhone(rawPhone);
+  const body = await req.json();
+  const rawPhone = body?.phone;
+  const code = body?.code;
+  const region = resolvePhoneRegion(
+    body?.defaultCountry,
+    req.headers.get("accept-language")
+  );
+  const phone = normalizePhone(
+    typeof rawPhone === "string" ? rawPhone : "",
+    region
+  );
 
   if (!phone) {
     return NextResponse.json(

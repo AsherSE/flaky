@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { normalizePhone } from "@/lib/phone";
+import { normalizePhone, resolvePhoneRegion } from "@/lib/phone";
 import { sendVerification } from "@/lib/twilio";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-  const { phone: rawPhone } = await req.json();
-  const phone = normalizePhone(rawPhone);
+  const body = await req.json();
+  const rawPhone = body?.phone;
+  const region = resolvePhoneRegion(
+    body?.defaultCountry,
+    req.headers.get("accept-language")
+  );
+  const phone = normalizePhone(
+    typeof rawPhone === "string" ? rawPhone : "",
+    region
+  );
 
   if (!phone) {
     return NextResponse.json(
