@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { normalizePhone } from "@/lib/phone";
 
 /** Calendar date in local timezone (YYYY-MM-DD). Avoids UTC vs local mismatch from toISOString(). */
 function localYmd(d: Date = new Date()): string {
@@ -77,7 +78,6 @@ export default function Home() {
   const [myCancellations, setMyCancellations] = useState<MyCancellationItem[]>(
     []
   );
-  const [myCancellationsLoading, setMyCancellationsLoading] = useState(false);
 
   useEffect(() => {
     const stored =
@@ -119,7 +119,6 @@ export default function Home() {
   useEffect(() => {
     if (!token || (step !== "flake" && step !== "result")) return;
     let cancelled = false;
-    setMyCancellationsLoading(true);
     (async () => {
       try {
         const res = await fetch("/api/flake", {
@@ -131,8 +130,6 @@ export default function Home() {
         setMyCancellations(Array.isArray(data.items) ? data.items : []);
       } catch {
         if (!cancelled) setMyCancellations([]);
-      } finally {
-        if (!cancelled) setMyCancellationsLoading(false);
       }
     })();
     return () => {
@@ -190,8 +187,18 @@ export default function Home() {
   };
 
   const handleFlake = async () => {
-    setLoading(true);
     setError("");
+    const self = normalizePhone(phone);
+    const targetsTrimmed = targetPhones.map((t) => t.trim()).filter(Boolean);
+    if (
+      self &&
+      targetsTrimmed.some((t) => normalizePhone(t) === self)
+    ) {
+      setError("That number is yours — add the other person's phone.");
+      return;
+    }
+
+    setLoading(true);
     try {
       const res = await fetch("/api/flake", {
         method: "POST",
@@ -200,7 +207,7 @@ export default function Home() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          targetPhones: targetPhones.map((t) => t.trim()).filter(Boolean),
+          targetPhones: targetsTrimmed,
           date,
         }),
       });
@@ -487,50 +494,43 @@ export default function Home() {
           ) : null}
         </div>
 
-        {token && (step === "flake" || step === "result") ? (
+        {token &&
+        (step === "flake" || step === "result") &&
+        myCancellations.length > 0 ? (
           <div className="mt-5 rounded-2xl border border-[#e8e4df] bg-white/80 p-4 shadow-sm backdrop-blur-sm">
             <h2 className="text-xs font-semibold uppercase tracking-wide text-[#9a9a9a]">
               Plans you&apos;ve flagged
             </h2>
-            {myCancellationsLoading && myCancellations.length === 0 ? (
-              <p className="mt-3 text-sm text-[#8a8a8a]">Loading…</p>
-            ) : myCancellations.length === 0 ? (
-              <p className="mt-3 text-sm text-[#8a8a8a] leading-relaxed">
-                When you tap &quot;I want to cancel,&quot; those plans show up
-                here with how many people have opted out so far.
-              </p>
-            ) : (
-              <ul className="mt-3 space-y-3">
-                {myCancellations.map((item) => (
-                  <li
-                    key={`${item.date}-${item.totalPeople}-${item.cancelledCount}`}
-                    className="flex items-center gap-3 rounded-xl bg-[#faf8f5] px-3 py-2.5"
-                  >
-                    <CancelProgressPie
-                      cancelledCount={item.cancelledCount}
-                      totalPeople={item.totalPeople}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-[#3d3d3d]">
-                        {formatPlanDate(item.date)}
-                      </p>
-                      <p className="text-xs text-[#8a8a8a] mt-0.5">
-                        {item.mutual ? (
-                          <span className="text-[#5a7d6c]">
-                            Everyone wanted out — you&apos;re covered
-                          </span>
-                        ) : (
-                          <>
-                            {item.cancelledCount} of {item.totalPeople} want to
-                            cancel
-                          </>
-                        )}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <ul className="mt-3 space-y-3">
+              {myCancellations.map((item) => (
+                <li
+                  key={`${item.date}-${item.totalPeople}-${item.cancelledCount}`}
+                  className="flex items-center gap-3 rounded-xl bg-[#faf8f5] px-3 py-2.5"
+                >
+                  <CancelProgressPie
+                    cancelledCount={item.cancelledCount}
+                    totalPeople={item.totalPeople}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-[#3d3d3d]">
+                      {formatPlanDate(item.date)}
+                    </p>
+                    <p className="text-xs text-[#8a8a8a] mt-0.5">
+                      {item.mutual ? (
+                        <span className="text-[#5a7d6c]">
+                          Everyone wanted out — you&apos;re covered
+                        </span>
+                      ) : (
+                        <>
+                          {item.cancelledCount} of {item.totalPeople} want to
+                          cancel
+                        </>
+                      )}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
           </div>
         ) : null}
 
