@@ -1,6 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+function contactsPickerAvailable(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const n = navigator as Navigator & {
+    contacts?: { select?: unknown };
+  };
+  return typeof n.contacts?.select === "function";
+}
+
+async function pickFirstPhoneFromContacts(): Promise<string | null> {
+  const n = navigator as Navigator & {
+    contacts?: {
+      select: (
+        properties: string[],
+        options: { multiple: boolean }
+      ) => Promise<{ tel?: string[] }[]>;
+    };
+  };
+  const contacts = n.contacts;
+  if (!contacts?.select) return null;
+  const selected = await contacts.select(["tel"], { multiple: false });
+  const raw = selected[0]?.tel?.find((t) => t?.trim());
+  return raw?.trim() ?? null;
+}
 
 /** Calendar date in local timezone (YYYY-MM-DD). Avoids UTC vs local mismatch from toISOString(). */
 function localYmd(d: Date = new Date()): string {
@@ -27,6 +51,11 @@ export default function Home() {
   const [result, setResult] = useState<FlakeResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [canPickContact, setCanPickContact] = useState(false);
+
+  useEffect(() => {
+    setCanPickContact(contactsPickerAvailable());
+  }, []);
 
   const handleSendCode = async () => {
     setLoading(true);
@@ -100,8 +129,9 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-[#faf8f5] to-[#f0ece6] flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
+    <main className="h-dvh max-h-dvh overflow-y-auto overscroll-none bg-gradient-to-b from-[#faf8f5] to-[#f0ece6]">
+      <div className="flex min-h-full items-center justify-center p-4">
+        <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-[#3d3d3d] tracking-tight">
             flaky
@@ -270,6 +300,7 @@ export default function Home() {
           >
             Feedback
           </button>
+        </div>
         </div>
       </div>
     </main>
