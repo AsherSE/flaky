@@ -10,6 +10,14 @@ function contactsPickerAvailable(): boolean {
   return typeof n.contacts?.select === "function";
 }
 
+function sanitizePickedTel(raw: string): string {
+  let s = raw.trim();
+  if (s.toLowerCase().startsWith("tel:")) {
+    s = s.slice(4).trim();
+  }
+  return s;
+}
+
 async function pickFirstPhoneFromContacts(): Promise<string | null> {
   const n = navigator as Navigator & {
     contacts?: {
@@ -23,7 +31,46 @@ async function pickFirstPhoneFromContacts(): Promise<string | null> {
   if (!contacts?.select) return null;
   const selected = await contacts.select(["tel"], { multiple: false });
   const raw = selected[0]?.tel?.find((t) => t?.trim());
-  return raw?.trim() ?? null;
+  if (!raw) return null;
+  return sanitizePickedTel(raw);
+}
+
+function FillFromContactsButton({
+  onFilled,
+  disabled,
+}: {
+  onFilled: (value: string) => void;
+  disabled?: boolean;
+}) {
+  const [supported, setSupported] = useState(false);
+  const [picking, setPicking] = useState(false);
+
+  useEffect(() => {
+    setSupported(contactsPickerAvailable());
+  }, []);
+
+  if (!supported) return null;
+
+  return (
+    <button
+      type="button"
+      disabled={disabled || picking}
+      onClick={async () => {
+        setPicking(true);
+        try {
+          const picked = await pickFirstPhoneFromContacts();
+          if (picked) onFilled(picked);
+        } catch {
+          /* cancelled or denied */
+        } finally {
+          setPicking(false);
+        }
+      }}
+      className="w-full py-3 rounded-xl font-medium border-2 border-[#81b29a] text-[#5a7d6c] bg-[#f4f9f6] hover:bg-[#e8f2ec] active:bg-[#dceee4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+    >
+      {picking ? "Opening contacts…" : "Fill from contacts"}
+    </button>
+  );
 }
 
 /** Calendar date in local timezone (YYYY-MM-DD). Avoids UTC vs local mismatch from toISOString(). */
@@ -51,11 +98,6 @@ export default function Home() {
   const [result, setResult] = useState<FlakeResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [canPickContact, setCanPickContact] = useState(false);
-
-  useEffect(() => {
-    setCanPickContact(contactsPickerAvailable());
-  }, []);
 
   const handleSendCode = async () => {
     setLoading(true);
@@ -149,30 +191,43 @@ export default function Home() {
           )}
 
           {step === "phone" && (
-            <div className="space-y-4">
-              <label className="block">
+            <form
+              className="space-y-4"
+              autoComplete="on"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (phone.trim()) void handleSendCode();
+              }}
+            >
+              <label className="block" htmlFor="flaky-your-phone">
                 <span className="text-sm font-medium text-[#5a5a5a]">
                   Your phone number
                 </span>
                 <input
+                  id="flaky-your-phone"
+                  name="tel"
                   type="tel"
+                  autoComplete="tel"
+                  enterKeyHint="send"
+                  inputMode="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="+1 (555) 123-4567"
                   className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
-                  onKeyDown={(e) =>
-                    e.key === "Enter" && phone.trim() && handleSendCode()
-                  }
                 />
               </label>
+              <FillFromContactsButton
+                onFilled={setPhone}
+                disabled={loading}
+              />
               <button
-                onClick={handleSendCode}
+                type="submit"
                 disabled={loading || !phone.trim()}
                 className="w-full py-3 bg-[#e07a5f] text-white rounded-xl font-medium hover:bg-[#d06a4f] active:bg-[#c05a3f] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {loading ? "Sending..." : "Send code"}
               </button>
-            </div>
+            </form>
           )}
 
           {step === "code" && (
@@ -221,18 +276,26 @@ export default function Home() {
 
           {step === "flake" && (
             <div className="space-y-4">
-              <label className="block">
+              <label className="block" htmlFor="flaky-their-phone">
                 <span className="text-sm font-medium text-[#5a5a5a]">
                   Their phone number
                 </span>
                 <input
+                  id="flaky-their-phone"
+                  name="recipient-tel"
                   type="tel"
+                  autoComplete="section-other tel"
+                  inputMode="tel"
                   value={targetPhone}
                   onChange={(e) => setTargetPhone(e.target.value)}
                   placeholder="+1 (555) 987-6543"
                   className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
                 />
               </label>
+              <FillFromContactsButton
+                onFilled={setTargetPhone}
+                disabled={loading}
+              />
               <label className="block">
                 <span className="text-sm font-medium text-[#5a5a5a]">
                   What day?
