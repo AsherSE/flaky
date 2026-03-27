@@ -26,6 +26,7 @@ interface FlakeResult {
 interface MyCancellationItem {
   date: string;
   participants?: string[];
+  flakedParticipants?: string[];
   totalPeople: number;
   cancelledCount: number;
   mutual: boolean;
@@ -84,21 +85,73 @@ function youAndMoreWantToCancel(cancelledCount: number): string {
   return `You and ${more} more want to cancel`;
 }
 
+const PIE_MEETING_GREY = "#3d3d3d";
+
+function fnv1a32(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/** Stable saturated color from E.164 (identicon-style). */
+function identiconColorFromPhone(e164: string): string {
+  const h = fnv1a32(e164);
+  const hue = h % 360;
+  const sat = 58 + (h >>> 8) % 22;
+  const light = 47 + (h >>> 16) % 14;
+  return `hsl(${hue} ${sat}% ${light}%)`;
+}
+
+function cancellationPieConicGradient(
+  participants: string[],
+  flaked: Set<string>
+): string {
+  const n = participants.length;
+  if (n === 0) return PIE_MEETING_GREY;
+  const stops: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const p = participants[i]!;
+    const start = (i / n) * 100;
+    const end = ((i + 1) / n) * 100;
+    const color = flaked.has(p) ? identiconColorFromPhone(p) : PIE_MEETING_GREY;
+    stops.push(`${color} ${start}% ${end}%`);
+  }
+  return `conic-gradient(${stops.join(", ")})`;
+}
+
 function CancelProgressPie({
+  participants,
+  flakedParticipants,
   cancelledCount,
   totalPeople,
 }: {
+  participants?: string[];
+  flakedParticipants?: string[];
   cancelledCount: number;
   totalPeople: number;
 }) {
   const safeTotal = Math.max(1, totalPeople);
   const pct = Math.min(100, Math.round((cancelledCount / safeTotal) * 100));
+  const parts = Array.isArray(participants) ? participants : [];
+  const flakedList = Array.isArray(flakedParticipants) ? flakedParticipants : [];
+  const flakedSet = new Set(flakedList);
+  const canSlice =
+    parts.length === safeTotal &&
+    parts.length > 0 &&
+    flakedList.length === cancelledCount &&
+    flakedSet.size === cancelledCount;
+
+  const background = canSlice
+    ? cancellationPieConicGradient(parts, flakedSet)
+    : `conic-gradient(#e07a5f 0% ${pct}%, ${PIE_MEETING_GREY} ${pct}% 100%)`;
+
   return (
     <div
-      className="h-11 w-11 shrink-0 rounded-full border border-[#e5e0d8] shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]"
-      style={{
-        background: `conic-gradient(#e07a5f 0% ${pct}%, #ece8e2 ${pct}% 100%)`,
-      }}
+      className="shrink-0 rounded-full border border-[#c9c4bc] shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] h-[calc(2.75rem*2/3)] w-[calc(2.75rem*2/3)]"
+      style={{ background }}
       role="img"
       aria-label={youAndMoreWantToCancel(cancelledCount)}
     />
@@ -198,6 +251,9 @@ export default function Home() {
             ...item,
             participants: Array.isArray(item.participants)
               ? item.participants
+              : [],
+            flakedParticipants: Array.isArray(item.flakedParticipants)
+              ? item.flakedParticipants
               : [],
           }))
         );
@@ -402,6 +458,9 @@ export default function Home() {
                 ...item,
                 participants: Array.isArray(item.participants)
                   ? item.participants
+                  : [],
+                flakedParticipants: Array.isArray(item.flakedParticipants)
+                  ? item.flakedParticipants
                   : [],
               }))
             );
@@ -945,6 +1004,8 @@ export default function Home() {
                   className="flex items-start gap-3"
                 >
                   <CancelProgressPie
+                    participants={item.participants}
+                    flakedParticipants={item.flakedParticipants}
                     cancelledCount={item.cancelledCount}
                     totalPeople={item.totalPeople}
                   />
@@ -984,7 +1045,7 @@ export default function Home() {
                     type="button"
                     disabled={loading || undoBusy}
                     onClick={() => void handleUndoFlake(item)}
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[#81b29a] text-[#5a7d6c] hover:bg-[#e8f2ec] active:bg-[#dceee4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors mt-0.5"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#e8b5a8] text-[#d06a4f] hover:border-[#e07a5f] hover:bg-[#fef6f4] hover:text-[#c05a3f] active:bg-[#fde8e2] disabled:opacity-50 disabled:cursor-not-allowed transition-colors mt-0.5"
                     aria-label="Take back — I do not want to cancel anymore"
                   >
                     <svg
@@ -992,9 +1053,9 @@ export default function Home() {
                       viewBox="0 0 24 24"
                       fill="none"
                       stroke="currentColor"
-                      strokeWidth={2.5}
+                      strokeWidth={2}
                       strokeLinecap="round"
-                      className="h-5 w-5"
+                      className="h-3.5 w-3.5"
                       aria-hidden
                     >
                       <path d="M6 6l12 12M18 6L6 18" />

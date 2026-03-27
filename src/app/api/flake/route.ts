@@ -116,6 +116,7 @@ export async function GET(req: NextRequest) {
       return {
         date: parsed.date,
         participants: parsed.participants,
+        flakedParticipants: [...flaked],
         totalPeople: total,
         cancelledCount,
         mutual: everyoneIn,
