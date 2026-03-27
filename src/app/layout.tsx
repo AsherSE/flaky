@@ -47,21 +47,11 @@ export const metadata: Metadata = {
     title: "flaky — cancel plans, guilt-free",
     description: siteDescription,
     url: "/",
-    images: [
-      {
-        url: "/logo.png",
-        width: 650,
-        height: 662,
-        alt: "flaky",
-        type: "image/png",
-      },
-    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "flaky — cancel plans, guilt-free",
     description: siteDescription,
-    images: ["/logo.png"],
   },
 };
 
