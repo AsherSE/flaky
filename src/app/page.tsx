@@ -5,6 +5,8 @@ import { useEffect, useLayoutEffect, useState } from "react";
 import {
   normalizePhone,
   inferPhoneRegionFromNavigator,
+  getRegionOptions,
+  callingCodeForRegion,
   type CountryCode,
 } from "@/lib/phone";
 
@@ -604,27 +606,55 @@ export default function Home() {
                 if (phone.trim()) void handleSendCode();
               }}
             >
-              <label className="block" htmlFor="flaky-your-phone">
-                <span className="text-sm font-medium text-[#5a5a5a]">
+              <fieldset>
+                <legend className="text-sm font-medium text-[#5a5a5a]">
                   Your phone number
-                </span>
-                <input
-                  id="flaky-your-phone"
-                  name="tel"
-                  type="tel"
-                  autoComplete="tel"
-                  enterKeyHint="send"
-                  inputMode="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="Your mobile number"
-                  className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
-                />
-              </label>
-              <p className="text-xs text-[#a3a3a3] leading-snug">
-                Country code is optional — use your local number, or include + and
-                country code (e.g. +44…).
-              </p>
+                </legend>
+                <div className="mt-1 flex items-end border-b-2 border-[#e0e0e0] focus-within:border-[#e07a5f] transition-colors overflow-hidden">
+                  <div className="shrink-0 relative">
+                    <select
+                      aria-label="Country code"
+                      value={phoneRegion}
+                      onChange={(e) =>
+                        setPhoneRegion(e.target.value as CountryCode)
+                      }
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    >
+                      {getRegionOptions().map((r, i) => (
+                        <option key={r.code} value={r.code}>
+                          {r.flag} +{r.callingCode}
+                          {i < 20 ? "" : ` — ${r.name}`}
+                        </option>
+                      ))}
+                    </select>
+                    <span
+                      className="flex items-center py-2 pr-1 text-base text-[#3d3d3d] pointer-events-none whitespace-nowrap"
+                      aria-hidden
+                    >
+                      {getRegionOptions().find((r) => r.code === phoneRegion)
+                        ?.flag ?? "🌐"}{" "}
+                      +
+                      {callingCodeForRegion(phoneRegion)}{" "}
+                      <svg className="ml-0.5 w-3 h-3 text-[#aaa]" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 5l3 3 3-3" /></svg>
+                    </span>
+                  </div>
+                  <span className="shrink-0 text-[#ccc] text-lg select-none pb-2">
+                    |
+                  </span>
+                  <input
+                    id="flaky-your-phone"
+                    name="tel"
+                    type="tel"
+                    autoComplete="tel"
+                    enterKeyHint="send"
+                    inputMode="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="Your mobile number"
+                    className="flex-1 min-w-0 px-2 py-2 border-0 focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] placeholder-[#ccc] bg-transparent"
+                  />
+                </div>
+              </fieldset>
               <button
                 type="submit"
                 disabled={loading || !phone.trim()}

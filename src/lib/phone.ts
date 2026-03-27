@@ -1,12 +1,69 @@
 import {
   parsePhoneNumberFromString,
   getCountries,
+  getCountryCallingCode,
   type CountryCode,
 } from "libphonenumber-js/max";
 
 export type { CountryCode };
 
 const KNOWN = new Set<string>(getCountries());
+
+function flagEmoji(cc: CountryCode): string {
+  const upper = cc.toUpperCase();
+  return String.fromCodePoint(
+    0x1f1e6 + upper.charCodeAt(0) - 65,
+    0x1f1e6 + upper.charCodeAt(1) - 65,
+  );
+}
+
+const DISPLAY_NAME_CACHE = new Map<string, string>();
+function regionDisplayName(cc: CountryCode, locale = "en"): string {
+  const key = `${cc}:${locale}`;
+  if (DISPLAY_NAME_CACHE.has(key)) return DISPLAY_NAME_CACHE.get(key)!;
+  try {
+    const name = new Intl.DisplayNames([locale], { type: "region" }).of(cc) ?? cc;
+    DISPLAY_NAME_CACHE.set(key, name);
+    return name;
+  } catch {
+    return cc;
+  }
+}
+
+const PRIORITY_REGIONS: CountryCode[] = [
+  "US", "GB", "CA", "AU", "IN", "DE", "FR", "JP", "BR", "MX",
+  "ES", "IT", "NL", "SE", "IL", "KR", "NZ", "IE", "SG", "ZA",
+];
+
+export interface RegionOption {
+  code: CountryCode;
+  callingCode: string;
+  flag: string;
+  name: string;
+}
+
+let _regionOptions: RegionOption[] | null = null;
+
+export function getRegionOptions(): RegionOption[] {
+  if (_regionOptions) return _regionOptions;
+  const all = getCountries();
+  const opts: RegionOption[] = all.map((c) => ({
+    code: c,
+    callingCode: getCountryCallingCode(c),
+    flag: flagEmoji(c),
+    name: regionDisplayName(c),
+  }));
+  opts.sort((a, b) => a.name.localeCompare(b.name));
+  const prioritySet = new Set<CountryCode>(PRIORITY_REGIONS);
+  const top = PRIORITY_REGIONS.map((c) => opts.find((o) => o.code === c)!).filter(Boolean);
+  const rest = opts.filter((o) => !prioritySet.has(o.code));
+  _regionOptions = [...top, ...rest];
+  return _regionOptions;
+}
+
+export function callingCodeForRegion(cc: CountryCode): string {
+  return getCountryCallingCode(cc);
+}
 
 export function isKnownCountryCode(
   region: string | null | undefined
