@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:lan": "next dev -H 0.0.0.0",
     "dev:poll": "WATCHPACK_POLLING=true next dev",
     "dev:clean": "npm run clean && next dev",
     "clean": "rm -rf .next",
@@ -13,7 +14,7 @@
     "lint": "next lint",
     "cap:sync": "npx cap sync ios",
     "cap:open": "npx cap open ios",
-    "cap:dev": "CAPACITOR_SERVER_URL=http://localhost:3000 npx cap sync ios"
+    "cap:dev": "node scripts/cap-dev-sync.cjs"
   },
   "dependencies": {
     "@capacitor/core": "^8.3.0",
