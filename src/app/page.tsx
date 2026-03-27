@@ -12,7 +12,7 @@ function localYmd(d: Date = new Date()): string {
   return `${y}-${m}-${day}`;
 }
 
-type Step = "phone" | "code" | "flake" | "result";
+type Step = "phone" | "code" | "name" | "flake" | "result";
 
 interface FlakeResult {
   mutual: boolean;
@@ -38,10 +38,7 @@ function formatPlanDate(ymd: string): string {
   });
 }
 
-/** Compare to session phone (any format) vs stored E.164. */
-function formatParticipantForList(rawSelf: string, participantE164: string) {
-  const self = normalizePhone(rawSelf);
-  if (self && self === participantE164) return "You";
+function maskParticipantPhone(participantE164: string): string {
   const digits = participantE164.replace(/\D/g, "");
   if (digits.length >= 4) {
     const last4 = digits.slice(-4);
@@ -50,6 +47,26 @@ function formatParticipantForList(rawSelf: string, participantE164: string) {
       : `…${last4}`;
   }
   return participantE164;
+}
+
+/** Compare to session phone (any format) vs stored E.164. Names from profiles (others who verified and set a name). */
+function formatParticipantForList(
+  rawSelf: string,
+  participantE164: string,
+  profileNames?: Record<string, string>
+) {
+  const self = normalizePhone(rawSelf);
+  if (self && self === participantE164) return "You";
+  const masked = maskParticipantPhone(participantE164);
+  const saved = profileNames?.[participantE164]?.trim();
+  if (saved) return `${saved} · ${masked}`;
+  return masked;
+}
+
+function displayMaskedSelf(rawPhone: string): string {
+  const e164 = normalizePhone(rawPhone);
+  if (e164) return maskParticipantPhone(e164);
+  return rawPhone.trim() || "—";
 }
 
 function CancelProgressPie({
@@ -79,6 +96,8 @@ function CancelProgressPie({
 }
 
 const TOKEN_KEY = "flaky-token";
+/** Remember “skip for now” so we don’t block returning users who chose not to set a name. */
+const SKIP_NAME_KEY = "flaky-skip-name";
 
 export default function Home() {
   const [step, setStep] = useState<Step>("phone");
@@ -86,6 +105,11 @@ export default function Home() {
   const [code, setCode] = useState("");
   const [targetPhones, setTargetPhones] = useState<string[]>([""]);
   const [date, setDate] = useState(() => localYmd());
+  const [profileNames, setProfileNames] = useState<Record<string, string>>({});
+  const [firstName, setFirstName] = useState("");
+  const [onboardingName, setOnboardingName] = useState("");
+  const [profileEditOpen, setProfileEditOpen] = useState(false);
+  const [profileDraft, setProfileDraft] = useState("");
   const [token, setToken] = useState<string | null>(null);
   const [result, setResult] = useState<FlakeResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -115,11 +139,18 @@ export default function Home() {
           window.localStorage.removeItem(TOKEN_KEY);
           return;
         }
-        const data: { phone?: string } = await res.json();
+        const data: { phone?: string; firstName?: string } = await res.json();
         if (cancelled) return;
         setToken(stored);
         if (data.phone) setPhone(data.phone);
-        setStep("flake");
+        const fn =
+          typeof data.firstName === "string" ? data.firstName.trim() : "";
+        setFirstName(fn);
+        setOnboardingName(fn);
+        const skippedName =
+          typeof window !== "undefined" &&
+          window.localStorage.getItem(SKIP_NAME_KEY) === "1";
+        setStep(fn || skippedName ? "flake" : "name");
       } catch {
         window.localStorage.removeItem(TOKEN_KEY);
       } finally {
@@ -141,7 +172,10 @@ export default function Home() {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) return;
-        const data: { items?: MyCancellationItem[] } = await res.json();
+        const data: {
+          items?: MyCancellationItem[];
+          profileNames?: Record<string, string>;
+        } = await res.json();
         if (cancelled) return;
         const rawItems = Array.isArray(data.items) ? data.items : [];
         setMyCancellations(
@@ -152,6 +186,9 @@ export default function Home() {
               : [],
           }))
         );
+        if (data.profileNames && typeof data.profileNames === "object") {
+          setProfileNames(data.profileNames);
+        }
       } catch {
         if (!cancelled) setMyCancellations([]);
       }
@@ -167,6 +204,13 @@ export default function Home() {
     setPhone("");
     setCode("");
     setError("");
+    setProfileNames({});
+    setFirstName("");
+    setOnboardingName("");
+    setProfileEditOpen(false);
+    setProfileDraft("");
+    window.localStorage.removeItem(SKIP_NAME_KEY);
+    setMyCancellations([]);
     setStep("phone");
   };
 
@@ -189,6 +233,29 @@ export default function Home() {
     }
   };
 
+  const persistFirstName = async (name: string) => {
+    const authToken =
+      token ??
+      (typeof window !== "undefined"
+        ? window.localStorage.getItem(TOKEN_KEY)
+        : null);
+    if (!authToken) throw new Error("Not signed in");
+    const res = await fetch("/api/profile", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({ firstName: name }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Could not save your name");
+    const saved =
+      typeof data.firstName === "string" ? data.firstName.trim() : "";
+    setFirstName(saved);
+    return saved;
+  };
+
   const handleVerifyCode = async () => {
     setLoading(true);
     setError("");
@@ -200,9 +267,67 @@ export default function Home() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Invalid code");
-      setToken(data.token);
-      localStorage.setItem(TOKEN_KEY, data.token);
+      const newToken = data.token as string;
+      setToken(newToken);
+      localStorage.setItem(TOKEN_KEY, newToken);
+
+      const sessionRes = await fetch("/api/session", {
+        headers: { Authorization: `Bearer ${newToken}` },
+      });
+      if (!sessionRes.ok) throw new Error("Session check failed");
+      const sessionData: { firstName?: string } = await sessionRes.json();
+      const fn =
+        typeof sessionData.firstName === "string"
+          ? sessionData.firstName.trim()
+          : "";
+      setFirstName(fn);
+      setOnboardingName(fn);
+      const skippedName =
+        typeof window !== "undefined" &&
+        window.localStorage.getItem(SKIP_NAME_KEY) === "1";
+      setStep(fn || skippedName ? "flake" : "name");
+      setProfileEditOpen(false);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const completeOnboardingName = async () => {
+    setError("");
+    const trimmed = onboardingName.trim();
+    if (!trimmed) {
+      setError("Add your first name to continue, or tap Skip for now.");
+      return;
+    }
+    setLoading(true);
+    try {
+      await persistFirstName(trimmed);
+      window.localStorage.removeItem(SKIP_NAME_KEY);
       setStep("flake");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const skipOnboardingName = () => {
+    setError("");
+    window.localStorage.setItem(SKIP_NAME_KEY, "1");
+    setStep("flake");
+  };
+
+  const saveProfileFromHeader = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      await persistFirstName(profileDraft);
+      if (profileDraft.trim()) {
+        window.localStorage.removeItem(SKIP_NAME_KEY);
+      }
+      setProfileEditOpen(false);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Something went wrong");
     } finally {
@@ -248,8 +373,10 @@ export default function Home() {
             headers: { Authorization: `Bearer ${token}` },
           });
           if (listRes.ok) {
-            const listData: { items?: MyCancellationItem[] } =
-              await listRes.json();
+            const listData: {
+              items?: MyCancellationItem[];
+              profileNames?: Record<string, string>;
+            } = await listRes.json();
             const rawItems = Array.isArray(listData.items)
               ? listData.items
               : [];
@@ -261,6 +388,12 @@ export default function Home() {
                   : [],
               }))
             );
+            if (
+              listData.profileNames &&
+              typeof listData.profileNames === "object"
+            ) {
+              setProfileNames(listData.profileNames);
+            }
           }
         } catch {
           /* list refresh is optional */
@@ -278,6 +411,7 @@ export default function Home() {
     setDate(localYmd());
     setResult(null);
     setError("");
+    setProfileEditOpen(false);
     setStep("flake");
   };
 
@@ -394,12 +528,126 @@ export default function Home() {
                 Use a different number
               </button>
             </div>
+          ) : step === "name" ? (
+            <form
+              className="space-y-4"
+              autoComplete="on"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void completeOnboardingName();
+              }}
+            >
+              <p className="text-sm text-[#6a6a6a] text-center leading-relaxed">
+                You&apos;re in. What should we call you?
+              </p>
+              <p className="text-xs text-[#8a8a8a] text-center">
+                Signed in as{" "}
+                <span className="font-medium text-[#6a6a6a]">
+                  {displayMaskedSelf(phone)}
+                </span>
+              </p>
+              <label className="block" htmlFor="flaky-onboarding-given-name">
+                <span className="text-sm font-medium text-[#5a5a5a]">
+                  First name
+                </span>
+                <input
+                  id="flaky-onboarding-given-name"
+                  name="given-name"
+                  type="text"
+                  autoComplete="given-name"
+                  enterKeyHint="done"
+                  value={onboardingName}
+                  onChange={(e) => setOnboardingName(e.target.value)}
+                  placeholder="Sam"
+                  className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={loading || !onboardingName.trim()}
+                className="w-full py-3 bg-[#e07a5f] text-white rounded-xl font-medium hover:bg-[#d06a4f] active:bg-[#c05a3f] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {loading ? "Saving..." : "Continue"}
+              </button>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={skipOnboardingName}
+                className="w-full py-2 text-sm text-[#8a8a8a] hover:text-[#5a5a5a] transition-colors"
+              >
+                Skip for now
+              </button>
+            </form>
           ) : step === "flake" ? (
             <div className="space-y-4">
-              <p className="text-xs text-[#8a8a8a] text-center">
-                Signed in with{" "}
-                <span className="font-medium text-[#6a6a6a]">{phone}</span>
-              </p>
+              {profileEditOpen ? (
+                <div className="space-y-3 rounded-xl border border-[#eee] bg-[#fafaf9] p-3">
+                  <p className="text-xs font-medium text-[#5a5a5a]">
+                    Your name / number
+                  </p>
+                  <label className="block" htmlFor="flaky-profile-given-name">
+                    <span className="text-xs text-[#8a8a8a]">First name</span>
+                    <input
+                      id="flaky-profile-given-name"
+                      name="given-name"
+                      type="text"
+                      autoComplete="given-name"
+                      value={profileDraft}
+                      onChange={(e) => setProfileDraft(e.target.value)}
+                      className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-base text-[#3d3d3d] bg-transparent"
+                    />
+                  </label>
+                  <p className="text-xs text-[#8a8a8a]">
+                    Number:{" "}
+                    <span className="text-[#6a6a6a]">
+                      {displayMaskedSelf(phone)}
+                    </span>{" "}
+                    — use &quot;Use a different number&quot; below to change it.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={() => void saveProfileFromHeader()}
+                      className="flex-1 py-2.5 bg-[#e07a5f] text-white rounded-xl text-sm font-medium hover:bg-[#d06a4f] disabled:opacity-50"
+                    >
+                      {loading ? "..." : "Save"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={() => {
+                        setProfileEditOpen(false);
+                        setProfileDraft(firstName);
+                      }}
+                      className="flex-1 py-2.5 border border-[#ddd] text-[#5a5a5a] rounded-xl text-sm font-medium hover:bg-white disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-[#8a8a8a] text-center leading-relaxed">
+                  <span className="text-[#8a8a8a]">Signed in as </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProfileDraft(firstName);
+                      setProfileEditOpen(true);
+                      setError("");
+                    }}
+                    className="font-medium text-[#6a6a6a] underline decoration-[#ccc] underline-offset-2 hover:text-[#e07a5f] hover:decoration-[#e07a5f]"
+                  >
+                    {firstName ? (
+                      <>
+                        {firstName}
+                        <span className="font-normal text-[#a3a3a3]"> · </span>
+                      </>
+                    ) : null}
+                    {displayMaskedSelf(phone)}
+                  </button>
+                </p>
+              )}
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-medium text-[#5a5a5a]">
@@ -408,9 +656,7 @@ export default function Home() {
                   <button
                     type="button"
                     disabled={loading}
-                    onClick={() =>
-                      setTargetPhones((prev) => [...prev, ""])
-                    }
+                    onClick={() => setTargetPhones((prev) => [...prev, ""])}
                     className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[#81b29a] text-[#5a7d6c] hover:bg-[#e8f2ec] active:bg-[#dceee4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     aria-label="Add another number"
                   >
@@ -429,56 +675,54 @@ export default function Home() {
                   </button>
                 </div>
                 {targetPhones.map((targetPhone, index) => (
-                  <div key={index} className="space-y-2">
-                    <div className="flex gap-2 items-end">
-                      <label
-                        className="block flex-1 min-w-0"
-                        htmlFor={`flaky-their-phone-${index}`}
+                  <div key={index} className="flex gap-2 items-end">
+                    <label
+                      className="block flex-1 min-w-0"
+                      htmlFor={`flaky-their-phone-${index}`}
+                    >
+                      <span className="text-xs text-[#8a8a8a]">
+                        {targetPhones.length > 1
+                          ? `Person ${index + 1}`
+                          : "Their number"}
+                      </span>
+                      <input
+                        id={`flaky-their-phone-${index}`}
+                        name={
+                          index === 0
+                            ? "recipient-tel"
+                            : `recipient-tel-${index}`
+                        }
+                        type="tel"
+                        autoComplete="section-other tel"
+                        inputMode="tel"
+                        value={targetPhone}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setTargetPhones((prev) => {
+                            const next = [...prev];
+                            next[index] = v;
+                            return next;
+                          });
+                        }}
+                        placeholder="+1 (555) 987-6543"
+                        className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
+                      />
+                    </label>
+                    {targetPhones.length > 1 && (
+                      <button
+                        type="button"
+                        disabled={loading}
+                        onClick={() =>
+                          setTargetPhones((prev) =>
+                            prev.filter((_, i) => i !== index)
+                          )
+                        }
+                        className="shrink-0 py-2 px-2 text-sm text-[#8a8a8a] hover:text-[#c05a3f] disabled:opacity-50"
+                        aria-label="Remove this number"
                       >
-                        <span className="text-xs text-[#8a8a8a]">
-                          {targetPhones.length > 1
-                            ? `Person ${index + 1}`
-                            : "Their number"}
-                        </span>
-                        <input
-                          id={`flaky-their-phone-${index}`}
-                          name={
-                            index === 0
-                              ? "recipient-tel"
-                              : `recipient-tel-${index}`
-                          }
-                          type="tel"
-                          autoComplete="section-other tel"
-                          inputMode="tel"
-                          value={targetPhone}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setTargetPhones((prev) => {
-                              const next = [...prev];
-                              next[index] = v;
-                              return next;
-                            });
-                          }}
-                          placeholder="+1 (555) 987-6543"
-                          className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
-                        />
-                      </label>
-                      {targetPhones.length > 1 && (
-                        <button
-                          type="button"
-                          disabled={loading}
-                          onClick={() =>
-                            setTargetPhones((prev) =>
-                              prev.filter((_, i) => i !== index)
-                            )
-                          }
-                          className="shrink-0 py-2 px-2 text-sm text-[#8a8a8a] hover:text-[#c05a3f] disabled:opacity-50"
-                          aria-label="Remove this number"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
+                        Remove
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -515,6 +759,73 @@ export default function Home() {
             </div>
           ) : step === "result" && result ? (
             <div className="text-center space-y-4 py-4">
+              {profileEditOpen ? (
+                <div className="text-left space-y-3 rounded-xl border border-[#eee] bg-[#fafaf9] p-3 mb-2">
+                  <p className="text-xs font-medium text-[#5a5a5a]">
+                    Your name / number
+                  </p>
+                  <label className="block" htmlFor="flaky-profile-given-name-result">
+                    <span className="text-xs text-[#8a8a8a]">First name</span>
+                    <input
+                      id="flaky-profile-given-name-result"
+                      name="given-name"
+                      type="text"
+                      autoComplete="given-name"
+                      value={profileDraft}
+                      onChange={(e) => setProfileDraft(e.target.value)}
+                      className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-base text-[#3d3d3d] bg-transparent"
+                    />
+                  </label>
+                  <p className="text-xs text-[#8a8a8a]">
+                    Number:{" "}
+                    <span className="text-[#6a6a6a]">
+                      {displayMaskedSelf(phone)}
+                    </span>
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={() => void saveProfileFromHeader()}
+                      className="flex-1 py-2.5 bg-[#e07a5f] text-white rounded-xl text-sm font-medium hover:bg-[#d06a4f] disabled:opacity-50"
+                    >
+                      {loading ? "..." : "Save"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={() => {
+                        setProfileEditOpen(false);
+                        setProfileDraft(firstName);
+                      }}
+                      className="flex-1 py-2.5 border border-[#ddd] text-[#5a5a5a] rounded-xl text-sm font-medium hover:bg-white disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-[#8a8a8a] text-center leading-relaxed mb-2">
+                  <span className="text-[#8a8a8a]">Signed in as </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProfileDraft(firstName);
+                      setProfileEditOpen(true);
+                      setError("");
+                    }}
+                    className="font-medium text-[#6a6a6a] underline decoration-[#ccc] underline-offset-2 hover:text-[#e07a5f] hover:decoration-[#e07a5f]"
+                  >
+                    {firstName ? (
+                      <>
+                        {firstName}
+                        <span className="font-normal text-[#a3a3a3]"> · </span>
+                      </>
+                    ) : null}
+                    {displayMaskedSelf(phone)}
+                  </button>
+                </p>
+              )}
               {result.mutual ? (
                 <>
                   <div className="text-5xl" aria-hidden="true">
@@ -587,7 +898,9 @@ export default function Home() {
                         const by = self && b === self ? 0 : 1;
                         return ay - by || a.localeCompare(b);
                       })
-                      .map((p) => formatParticipantForList(phone, p))
+                      .map((p) =>
+                        formatParticipantForList(phone, p, profileNames)
+                      )
                       .join(" · ")}
                   </p>
                 </div>

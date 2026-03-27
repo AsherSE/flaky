@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
+import { profileKey } from "@/lib/profile";
 
 export const dynamic = "force-dynamic";
 
@@ -19,5 +20,10 @@ export async function GET(request: NextRequest) {
 
   await redis.set(`session:${sessionToken}`, phone, { ex: SESSION_TTL_SEC });
 
-  return NextResponse.json({ phone });
+  const firstName = await redis.get<string>(profileKey(phone));
+
+  return NextResponse.json({
+    phone,
+    firstName: typeof firstName === "string" ? firstName : "",
+  });
 }

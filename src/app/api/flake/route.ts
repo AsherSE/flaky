@@ -3,6 +3,7 @@ import { redis } from "@/lib/redis";
 import { normalizePhone } from "@/lib/phone";
 import { getRandomMessage } from "@/lib/messages";
 import { sendSMS } from "@/lib/twilio";
+import { profileKey } from "@/lib/profile";
 
 export const dynamic = "force-dynamic";
 
@@ -31,9 +32,22 @@ async function rememberUserFlaked(phone: string, flakeKey: string) {
   await redis.expire(userFlakesIndexKey(phone), SEVEN_DAYS);
 }
 
-function participantSetFromBody(body: unknown): string[] | null {
+function targetsFromBody(body: unknown): string[] | null {
   if (!body || typeof body !== "object") return null;
   const o = body as Record<string, unknown>;
+
+  if (Array.isArray(o.targets)) {
+    const normalized = new Set<string>();
+    for (const row of o.targets) {
+      if (!row || typeof row !== "object") continue;
+      const r = row as Record<string, unknown>;
+      const phoneRaw = typeof r.phone === "string" ? r.phone : "";
+      const n = normalizePhone(phoneRaw);
+      if (n) normalized.add(n);
+    }
+    return normalized.size ? Array.from(normalized) : null;
+  }
+
   const rawList = Array.isArray(o.targetPhones)
     ? o.targetPhones
     : o.targetPhone != null
@@ -48,6 +62,20 @@ function participantSetFromBody(body: unknown): string[] | null {
     if (n) normalized.add(n);
   }
   return normalized.size ? Array.from(normalized) : null;
+}
+
+async function loadProfileNames(phones: string[]): Promise<Record<string, string>> {
+  const unique = Array.from(new Set(phones.filter(Boolean)));
+  if (!unique.length) return {};
+
+  const keys = unique.map((p) => profileKey(p));
+  const values = await redis.mget<string[]>(...keys);
+  const out: Record<string, string> = {};
+  unique.forEach((p, i) => {
+    const v = values[i];
+    if (typeof v === "string" && v.length > 0) out[p] = v;
+  });
+  return out;
 }
 
 export async function GET(req: NextRequest) {
@@ -97,7 +125,13 @@ export async function GET(req: NextRequest) {
   );
   list.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
-  return NextResponse.json({ items: list });
+  const allParticipants = new Set<string>();
+  for (const item of list) {
+    for (const p of item.participants) allParticipants.add(p);
+  }
+  const profileNames = await loadProfileNames(Array.from(allParticipants));
+
+  return NextResponse.json({ items: list, profileNames });
 }
 
 export async function POST(req: NextRequest) {
@@ -114,8 +148,7 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const { date } = body;
-  const targets = participantSetFromBody(body);
-
+  const targets = targetsFromBody(body);
   if (!targets?.length) {
     return NextResponse.json(
       { error: "Enter at least one valid phone number" },
