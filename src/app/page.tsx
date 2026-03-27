@@ -597,12 +597,20 @@ export default function Home() {
                       className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-base text-[#3d3d3d] bg-transparent"
                     />
                   </label>
-                  <p className="text-xs text-[#8a8a8a]">
+                  <p className="text-xs text-[#8a8a8a] leading-relaxed">
                     Number:{" "}
                     <span className="text-[#6a6a6a]">
                       {displayMaskedSelf(phone)}
-                    </span>{" "}
-                    — use &quot;Use a different number&quot; below to change it.
+                    </span>
+                    {" · "}
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={signOut}
+                      className="text-[#8a8a8a] underline decoration-[#ccc] underline-offset-2 hover:text-[#5a5a5a] disabled:opacity-50"
+                    >
+                      Use a different number
+                    </button>
                   </p>
                   <div className="flex gap-2">
                     <button
@@ -651,7 +659,7 @@ export default function Home() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-medium text-[#5a5a5a]">
-                    Their phone numbers
+                    Who are you meeting?
                   </span>
                   <button
                     type="button"
@@ -749,13 +757,6 @@ export default function Home() {
               >
                 {loading ? "..." : "I want to cancel"}
               </button>
-              <button
-                type="button"
-                onClick={signOut}
-                className="w-full py-2 text-sm text-[#8a8a8a] hover:text-[#5a5a5a] transition-colors"
-              >
-                Use a different number
-              </button>
             </div>
           ) : step === "result" && result ? (
             <div className="text-center space-y-4 py-4">
@@ -776,11 +777,20 @@ export default function Home() {
                       className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-base text-[#3d3d3d] bg-transparent"
                     />
                   </label>
-                  <p className="text-xs text-[#8a8a8a]">
+                  <p className="text-xs text-[#8a8a8a] leading-relaxed">
                     Number:{" "}
                     <span className="text-[#6a6a6a]">
                       {displayMaskedSelf(phone)}
                     </span>
+                    {" · "}
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={signOut}
+                      className="text-[#8a8a8a] underline decoration-[#ccc] underline-offset-2 hover:text-[#5a5a5a] disabled:opacity-50"
+                    >
+                      Use a different number
+                    </button>
                   </p>
                   <div className="flex gap-2">
                     <button
