@@ -101,9 +101,20 @@ function regionFromAcceptLanguage(header: string | null): CountryCode | undefine
   return undefined;
 }
 
+/** Strip `tel:` and light cleanup; keeps `+` and digits for parsing. */
+function preprocessPhoneRaw(raw: string): string {
+  let s = raw.trim();
+  if (/^tel:/i.test(s)) {
+    s = s.replace(/^tel:/i, "").trim();
+  }
+  s = s.replace(/^00+(?=\d)/, "+");
+  return s;
+}
+
 /**
  * Normalize to E.164. Numbers with + or 00… are parsed as international.
  * Otherwise parsed as a national number in `defaultCountry` (browser locale or API hint).
+ * Explicit `+country…` is never double-prefixed; national numbers use `defaultCountry`.
  */
 export function normalizePhone(
   raw: string,
@@ -111,7 +122,7 @@ export function normalizePhone(
 ): string | null {
   if (!raw?.trim()) return null;
 
-  const trimmed = raw.trim().replace(/^00+(?=\d)/, "+");
+  const trimmed = preprocessPhoneRaw(raw);
 
   if (trimmed.startsWith("+")) {
     const intl = parsePhoneNumberFromString(trimmed);
@@ -122,15 +133,64 @@ export function normalizePhone(
   const national = parsePhoneNumberFromString(trimmed, defaultCountry);
   if (national?.isValid()) return national.format("E.164");
 
-  // Preserve previous US-only behavior if libphonenumber is stricter on an edge case.
+  // National digits-only fallback when libphonenumber is stricter (e.g. unusual separators).
   if (defaultCountry === "US") {
-    const cleaned = raw.replace(/[^\d+]/g, "");
-    const digits = cleaned.replace(/\D/g, "");
+    const digits = trimmed.replace(/\D/g, "");
     if (digits.length === 10) return `+1${digits}`;
     if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
   }
 
   return null;
+}
+
+export type FlakeTargetAnalysis =
+  | { ok: true; targetsE164: string[] }
+  | { ok: false; error: string };
+
+/**
+ * Validates flake "who are you meeting" inputs. Uses `selfE164` so own number is rejected
+ * even when the API would otherwise see zero valid parses.
+ */
+export function analyzeFlakeTargetInput(
+  rawSlots: string[],
+  defaultCountry: CountryCode,
+  selfE164: string | null
+): FlakeTargetAnalysis {
+  const nonEmpty = rawSlots
+    .map((s) => (typeof s === "string" ? s.trim() : ""))
+    .filter(Boolean);
+
+  if (nonEmpty.length === 0) {
+    return { ok: false, error: "Add the other person's phone number." };
+  }
+
+  const pairs = nonEmpty.map((raw) => ({
+    raw,
+    e164: normalizePhone(raw, defaultCountry),
+  }));
+
+  for (const p of pairs) {
+    if (p.e164 && selfE164 && p.e164 === selfE164) {
+      return {
+        ok: false,
+        error: "Don't add your own number — use the other person's phone.",
+      };
+    }
+  }
+
+  const invalid = pairs.filter((p) => !p.e164);
+  if (invalid.length > 0) {
+    if (pairs.length === 1) {
+      return { ok: false, error: "Enter a valid phone number." };
+    }
+    return {
+      ok: false,
+      error: "Some entries aren't valid numbers — check each one.",
+    };
+  }
+
+  const unique = Array.from(new Set(pairs.map((p) => p.e164!)));
+  return { ok: true, targetsE164: unique };
 }
 
 /** Best-effort region from the browser (for national numbers without a country prefix). */

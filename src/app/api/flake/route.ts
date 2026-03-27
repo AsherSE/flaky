@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
-import { normalizePhone, resolvePhoneRegion, type CountryCode } from "@/lib/phone";
+import {
+  analyzeFlakeTargetInput,
+  normalizePhone,
+  resolvePhoneRegion,
+  type CountryCode,
+} from "@/lib/phone";
 import { getRandomMessage } from "@/lib/messages";
 import { sendSMS } from "@/lib/twilio";
 import { profileKey } from "@/lib/profile";
@@ -32,39 +37,24 @@ async function rememberUserFlaked(phone: string, flakeKey: string) {
   await redis.expire(userFlakesIndexKey(phone), SEVEN_DAYS);
 }
 
-function targetsFromBody(
-  body: unknown,
-  defaultCountry: CountryCode
-): string[] | null {
+function rawTargetSlotsFromBody(body: unknown): string[] | null {
   if (!body || typeof body !== "object") return null;
   const o = body as Record<string, unknown>;
 
+  if (Array.isArray(o.targetPhones)) {
+    return o.targetPhones.map((x) => (typeof x === "string" ? x : ""));
+  }
+  if (o.targetPhone != null) {
+    return [typeof o.targetPhone === "string" ? o.targetPhone : ""];
+  }
   if (Array.isArray(o.targets)) {
-    const normalized = new Set<string>();
-    for (const row of o.targets) {
-      if (!row || typeof row !== "object") continue;
+    return o.targets.map((row) => {
+      if (!row || typeof row !== "object") return "";
       const r = row as Record<string, unknown>;
-      const phoneRaw = typeof r.phone === "string" ? r.phone : "";
-      const n = normalizePhone(phoneRaw, defaultCountry);
-      if (n) normalized.add(n);
-    }
-    return normalized.size ? Array.from(normalized) : null;
+      return typeof r.phone === "string" ? r.phone : "";
+    });
   }
-
-  const rawList = Array.isArray(o.targetPhones)
-    ? o.targetPhones
-    : o.targetPhone != null
-      ? [o.targetPhone]
-      : null;
-  if (!rawList) return null;
-
-  const normalized = new Set<string>();
-  for (const raw of rawList) {
-    if (typeof raw !== "string") continue;
-    const n = normalizePhone(raw, defaultCountry);
-    if (n) normalized.add(n);
-  }
-  return normalized.size ? Array.from(normalized) : null;
+  return null;
 }
 
 async function loadProfileNames(phones: string[]): Promise<Record<string, string>> {
@@ -156,20 +146,16 @@ export async function POST(req: NextRequest) {
     body?.defaultCountry,
     req.headers.get("accept-language")
   );
-  const targets = targetsFromBody(body, region);
-  if (!targets?.length) {
-    return NextResponse.json(
-      { error: "Enter at least one valid phone number" },
-      { status: 400 }
-    );
+  const rawSlots = rawTargetSlotsFromBody(body);
+  if (!rawSlots) {
+    return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 
-  if (targets.includes(myPhone)) {
-    return NextResponse.json(
-      { error: "You can't flake on yourself (but we respect the honesty)" },
-      { status: 400 }
-    );
+  const analysis = analyzeFlakeTargetInput(rawSlots, region, myPhone);
+  if (!analysis.ok) {
+    return NextResponse.json({ error: analysis.error }, { status: 400 });
   }
+  const targets = analysis.targetsE164;
 
   if (!date) {
     return NextResponse.json(

@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useLayoutEffect, useState } from "react";
 import {
+  analyzeFlakeTargetInput,
   normalizePhone,
   inferPhoneRegionFromNavigator,
   getRegionOptions,
@@ -444,12 +445,13 @@ export default function Home() {
   const handleFlake = async () => {
     setError("");
     const self = normalizePhone(phone, phoneRegion);
-    const targetsTrimmed = targetPhones.map((t) => t.trim()).filter(Boolean);
-    if (
-      self &&
-      targetsTrimmed.some((t) => normalizePhone(t, phoneRegion) === self)
-    ) {
-      setError("That number is yours — add the other person's phone.");
+    const flakeCheck = analyzeFlakeTargetInput(
+      targetPhones,
+      phoneRegion,
+      self
+    );
+    if (!flakeCheck.ok) {
+      setError(flakeCheck.error);
       return;
     }
 
@@ -462,7 +464,7 @@ export default function Home() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          targetPhones: targetsTrimmed,
+          targetPhones,
           date,
           defaultCountry: phoneRegion,
         }),
@@ -965,11 +967,7 @@ export default function Home() {
               </label>
               <button
                 onClick={handleFlake}
-                disabled={
-                  loading ||
-                  !targetPhones.some((t) => t.trim()) ||
-                  !date
-                }
+                disabled={loading || !date}
                 className="w-full py-3 bg-[#e07a5f] text-white rounded-xl font-medium hover:bg-[#d06a4f] active:bg-[#c05a3f] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {loading ? "..." : "I want to cancel"}
