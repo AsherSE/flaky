@@ -121,21 +121,34 @@ function identiconColorFromPhone(e164: string): string {
   return PASTEL_JP_SLICE_COLORS[h % PASTEL_JP_SLICE_COLORS.length]!;
 }
 
+/** You first, then everyone else in stable order (clockwise after the first slice). */
+function participantsPieOrder(
+  participants: string[],
+  selfE164: string | null
+): string[] {
+  const sorted = [...participants].sort((a, b) => a.localeCompare(b));
+  if (!selfE164 || !sorted.includes(selfE164)) return sorted;
+  return [selfE164, ...sorted.filter((p) => p !== selfE164)];
+}
+
 function cancellationPieConicGradient(
   participants: string[],
-  flaked: Set<string>
+  flaked: Set<string>,
+  selfE164: string | null
 ): string {
-  const n = participants.length;
+  const ordered = participantsPieOrder(participants, selfE164);
+  const n = ordered.length;
   if (n === 0) return PIE_MEETING_GREY;
   const stops: string[] = [];
   for (let i = 0; i < n; i++) {
-    const p = participants[i]!;
+    const p = ordered[i]!;
     const start = (i / n) * 100;
     const end = ((i + 1) / n) * 100;
     const color = flaked.has(p) ? identiconColorFromPhone(p) : PIE_MEETING_GREY;
     stops.push(`${color} ${start}% ${end}%`);
   }
-  return `conic-gradient(${stops.join(", ")})`;
+  /* 180deg = start at bottom; percentages increase clockwise (CSS default). */
+  return `conic-gradient(from 180deg, ${stops.join(", ")})`;
 }
 
 function CancelProgressPie({
@@ -143,11 +156,13 @@ function CancelProgressPie({
   flakedParticipants,
   cancelledCount,
   totalPeople,
+  selfE164,
 }: {
   participants?: string[];
   flakedParticipants?: string[];
   cancelledCount: number;
   totalPeople: number;
+  selfE164: string | null;
 }) {
   const safeTotal = Math.max(1, totalPeople);
   const pct = Math.min(100, Math.round((cancelledCount / safeTotal) * 100));
@@ -161,8 +176,8 @@ function CancelProgressPie({
     flakedSet.size === cancelledCount;
 
   const background = canSlice
-    ? cancellationPieConicGradient(parts, flakedSet)
-    : `conic-gradient(#e07a5f 0% ${pct}%, ${PIE_MEETING_GREY} ${pct}% 100%)`;
+    ? cancellationPieConicGradient(parts, flakedSet, selfE164)
+    : `conic-gradient(from 180deg, #e07a5f 0% ${pct}%, ${PIE_MEETING_GREY} ${pct}% 100%)`;
 
   return (
     <div
@@ -1025,6 +1040,7 @@ export default function Home() {
                     flakedParticipants={item.flakedParticipants}
                     cancelledCount={item.cancelledCount}
                     totalPeople={item.totalPeople}
+                    selfE164={normalizePhone(phone, phoneRegion)}
                   />
                   <div className="min-w-0 flex-1 pt-0.5">
                     <p className="text-sm font-medium text-[#3d3d3d]">
