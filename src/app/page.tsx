@@ -69,6 +69,13 @@ function displayMaskedSelf(rawPhone: string): string {
   return rawPhone.trim() || "—";
 }
 
+/** Copy for plans where the viewer is always counted in cancelledCount (see GET /api/flake). */
+function youAndMoreWantToCancel(cancelledCount: number): string {
+  if (cancelledCount <= 1) return "You want to cancel";
+  const more = cancelledCount - 1;
+  return `You and ${more} more want to cancel`;
+}
+
 function CancelProgressPie({
   cancelledCount,
   totalPeople,
@@ -82,7 +89,7 @@ function CancelProgressPie({
     <div
       className="relative h-11 w-11 shrink-0 rounded-full bg-[#ece8e2]"
       role="img"
-      aria-label={`${cancelledCount} of ${totalPeople} want to cancel`}
+      aria-label={youAndMoreWantToCancel(cancelledCount)}
     >
       <div
         className="absolute inset-0 rounded-full"
@@ -894,10 +901,7 @@ export default function Home() {
                         Everyone wanted out — you&apos;re covered
                       </span>
                     ) : (
-                      <>
-                        {item.cancelledCount} of {item.totalPeople} want to
-                        cancel
-                      </>
+                      <>{youAndMoreWantToCancel(item.cancelledCount)}</>
                     )}
                   </p>
                   <p className="text-xs text-[#6a6a6a] mt-1.5 leading-relaxed">
