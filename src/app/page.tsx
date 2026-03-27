@@ -42,34 +42,44 @@ function FillFromContactsButton({
   onFilled: (value: string) => void;
   disabled?: boolean;
 }) {
-  const [supported, setSupported] = useState(false);
   const [picking, setPicking] = useState(false);
-
-  useEffect(() => {
-    setSupported(contactsPickerAvailable());
-  }, []);
-
-  if (!supported) return null;
+  const [hint, setHint] = useState<string | null>(null);
+  const supported =
+    typeof navigator !== "undefined" && contactsPickerAvailable();
 
   return (
-    <button
-      type="button"
-      disabled={disabled || picking}
-      onClick={async () => {
-        setPicking(true);
-        try {
-          const picked = await pickFirstPhoneFromContacts();
-          if (picked) onFilled(picked);
-        } catch {
-          /* cancelled or denied */
-        } finally {
-          setPicking(false);
-        }
-      }}
-      className="w-full py-3 rounded-xl font-medium border-2 border-[#81b29a] text-[#5a7d6c] bg-[#f4f9f6] hover:bg-[#e8f2ec] active:bg-[#dceee4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-    >
-      {picking ? "Opening contacts…" : "Fill from contacts"}
-    </button>
+    <div className="space-y-2">
+      <button
+        type="button"
+        disabled={disabled || picking}
+        onClick={async () => {
+          setHint(null);
+          if (!supported) {
+            setHint(
+              "Opening your address book only works in Chrome on Android over HTTPS. On this device, tap the number field — your keyboard or password manager can suggest a saved number."
+            );
+            return;
+          }
+          setPicking(true);
+          try {
+            const picked = await pickFirstPhoneFromContacts();
+            if (picked) onFilled(picked);
+          } catch {
+            /* cancelled or denied */
+          } finally {
+            setPicking(false);
+          }
+        }}
+        className="w-full py-3 rounded-xl font-medium border-2 border-[#81b29a] text-[#5a7d6c] bg-[#f4f9f6] hover:bg-[#e8f2ec] active:bg-[#dceee4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      >
+        {picking ? "Opening contacts…" : "Fill from contacts"}
+      </button>
+      {hint && (
+        <p className="text-xs text-[#8a8a8a] leading-relaxed" role="status">
+          {hint}
+        </p>
+      )}
+    </div>
   );
 }
 
