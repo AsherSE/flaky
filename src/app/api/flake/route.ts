@@ -269,17 +269,16 @@ export async function DELETE(req: NextRequest) {
 
   const flakeKey = `flake:${sorted.join(":")}:${date}`;
   const raw = await redis.get<string[]>(flakeKey);
-  if (!Array.isArray(raw) || !raw.includes(myPhone)) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
 
-  const updated = raw.filter((p) => p !== myPhone);
   await redis.srem(userFlakesIndexKey(myPhone), flakeKey);
 
-  if (updated.length === 0) {
-    await redis.del(flakeKey);
-  } else {
-    await redis.set(flakeKey, updated, { ex: SEVEN_DAYS });
+  if (Array.isArray(raw) && raw.includes(myPhone)) {
+    const updated = raw.filter((p) => p !== myPhone);
+    if (updated.length === 0) {
+      await redis.del(flakeKey);
+    } else {
+      await redis.set(flakeKey, updated, { ex: SEVEN_DAYS });
+    }
   }
 
   return NextResponse.json({ ok: true });
