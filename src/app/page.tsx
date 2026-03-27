@@ -61,7 +61,7 @@ function formatParticipantForList(
   defaultCountry: CountryCode = "US"
 ) {
   const self = normalizePhone(rawSelf, defaultCountry);
-  if (self && self === participantE164) return "You";
+  if (self && self === participantE164) return "With";
   const masked = maskParticipantPhone(participantE164);
   const saved = profileNames?.[participantE164]?.trim();
   if (saved) return `${saved} · ${masked}`;
