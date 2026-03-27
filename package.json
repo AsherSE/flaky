@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "WATCHPACK_POLLING=true next dev",
+    "dev": "next dev",
+    "dev:poll": "WATCHPACK_POLLING=true next dev",
+    "dev:clean": "npm run clean && next dev",
     "clean": "rm -rf .next",
     "build": "next build",
     "rebuild": "npm run clean && npm run build",

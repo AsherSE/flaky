@@ -291,6 +291,9 @@ export default function Home() {
           <p className="text-[#8a8a8a] mt-1 text-sm">
             cancel plans, guilt-free
           </p>
+          <p className="text-[#a3a3a3] mt-1.5 text-xs">
+            (nobody knows, unless they cancel too)
+          </p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm border border-[#eee] p-6">
@@ -397,10 +400,21 @@ export default function Home() {
                     onClick={() =>
                       setTargetPhones((prev) => [...prev, ""])
                     }
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[#81b29a] text-[#5a7d6c] text-xl font-medium leading-none hover:bg-[#e8f2ec] active:bg-[#dceee4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[#81b29a] text-[#5a7d6c] hover:bg-[#e8f2ec] active:bg-[#dceee4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     aria-label="Add another number"
                   >
-                    +
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2.5}
+                      strokeLinecap="round"
+                      className="h-5 w-5"
+                      aria-hidden
+                    >
+                      <path d="M12 5v14M5 12h14" />
+                    </svg>
                   </button>
                 </div>
                 {targetPhones.map((targetPhone, index) => (
