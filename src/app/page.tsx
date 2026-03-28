@@ -128,7 +128,7 @@ function identiconColorFromPhone(e164: string): string {
   return PASTEL_JP_SLICE_COLORS[h % PASTEL_JP_SLICE_COLORS.length]!;
 }
 
-/** You first, then everyone else in stable order (clockwise after the first slice). */
+/** You first, then everyone else in stable order (counter-clockwise after the first slice). */
 function participantsPieOrder(
   participants: string[],
   selfE164: string | null
@@ -149,13 +149,13 @@ function cancellationPieConicGradient(
   const stops: string[] = [];
   for (let i = 0; i < n; i++) {
     const p = ordered[i]!;
-    const start = (i / n) * 100;
-    const end = ((i + 1) / n) * 100;
+    /* 0deg = top; map i so wedges run counter-clockwise from 12 o'clock. */
+    const start = ((n - 1 - i) / n) * 100;
+    const end = ((n - i) / n) * 100;
     const color = flaked.has(p) ? identiconColorFromPhone(p) : PIE_MEETING_GREY;
     stops.push(`${color} ${start}% ${end}%`);
   }
-  /* 180deg = start at bottom; percentages increase clockwise (CSS default). */
-  return `conic-gradient(from 180deg, ${stops.join(", ")})`;
+  return `conic-gradient(from 0deg, ${stops.join(", ")})`;
 }
 
 function CancelProgressPie({
@@ -184,7 +184,7 @@ function CancelProgressPie({
 
   const background = canSlice
     ? cancellationPieConicGradient(parts, flakedSet, selfE164)
-    : `conic-gradient(from 180deg, #e07a5f 0% ${pct}%, ${PIE_MEETING_GREY} ${pct}% 100%)`;
+    : `conic-gradient(from 0deg, ${PIE_MEETING_GREY} 0% ${100 - pct}%, #e07a5f ${100 - pct}% 100%)`;
 
   return (
     <div
