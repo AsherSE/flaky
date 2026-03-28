@@ -10,7 +10,10 @@ import {
   callingCodeForRegion,
   type CountryCode,
 } from "@/lib/phone";
-import { pickPhoneFromContacts } from "@/lib/contact-picker";
+import {
+  isCapacitorIOS,
+  pickPhoneFromContacts,
+} from "@/lib/contact-picker";
 
 /** Calendar date in local timezone (YYYY-MM-DD). Avoids UTC vs local mismatch from toISOString(). */
 function localYmd(d: Date = new Date()): string {
@@ -218,9 +221,11 @@ export default function Home() {
   );
   const [undoingFlakeKey, setUndoingFlakeKey] = useState<string | null>(null);
   const [phoneRegion, setPhoneRegion] = useState<CountryCode>("US");
+  const [capacitorIos, setCapacitorIos] = useState(false);
 
   useLayoutEffect(() => {
     setPhoneRegion(inferPhoneRegionFromNavigator());
+    setCapacitorIos(isCapacitorIOS());
   }, []);
 
   useEffect(() => {
@@ -565,7 +570,13 @@ export default function Home() {
 
   return (
     <main className="h-dvh max-h-dvh overflow-y-auto overscroll-none bg-gradient-to-b from-[#faf8f5] to-[#f0ece6]">
-      <div className="flex min-h-full items-start justify-center px-4 pb-4 pt-14">
+      <div
+        className={
+          capacitorIos
+            ? "flex min-h-full items-start justify-center px-4 pb-4 pt-[calc(env(safe-area-inset-top,0px)+4rem)]"
+            : "flex min-h-full items-start justify-center px-4 pb-4 pt-14"
+        }
+      >
         <div className="w-full min-w-0 max-w-sm">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-0">

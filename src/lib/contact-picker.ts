@@ -27,3 +27,12 @@ export function isNativeApp(): boolean {
     return false;
   }
 }
+
+/** True only in the Capacitor iOS app (not Safari, not Android). */
+export function isCapacitorIOS(): boolean {
+  try {
+    return Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios";
+  } catch {
+    return false;
+  }
+}
