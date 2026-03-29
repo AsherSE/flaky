@@ -272,8 +272,8 @@ export async function DELETE(req: NextRequest) {
   const raw = await redis.get<string[]>(flakeKey);
 
   if (Array.isArray(raw)) {
-    const uniqueFlaked = Array.from(new Set(raw.filter(Boolean)));
-    const isMutual = sorted.every((p) => uniqueFlaked.includes(p));
+    const uniqueFlaked = new Set(raw.filter(Boolean));
+    const isMutual = sorted.every((p): boolean => !!p && uniqueFlaked.has(p));
     if (isMutual) {
       return NextResponse.json(
         { error: "Cannot undo — everyone already agreed to cancel" },
