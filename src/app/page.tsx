@@ -556,7 +556,7 @@ export default function Home() {
         body: JSON.stringify({ date: item.date, participants }),
       });
       const data: { error?: string } = await res.json().catch(() => ({}));
-      if (!res.ok && res.status !== 404) {
+      if (!res.ok && res.status !== 404 && res.status !== 409) {
         if (res.status === 401) signOut();
         throw new Error(
           typeof data.error === "string" ? data.error : "Could not update"
@@ -565,7 +565,6 @@ export default function Home() {
       setMyCancellations((prev) =>
         prev.filter((x) => myCancellationRowKey(x) !== rowKey)
       );
-      refreshCancellations(token);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Something went wrong");
     } finally {
