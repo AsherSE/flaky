@@ -270,38 +270,42 @@ export default function Home() {
     };
   }, []);
 
+  const refreshCancellations = async (authToken: string) => {
+    try {
+      const res = await fetch("/api/flake", {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      if (!res.ok) return;
+      const data: {
+        items?: MyCancellationItem[];
+        profileNames?: Record<string, string>;
+      } = await res.json();
+      const rawItems = Array.isArray(data.items) ? data.items : [];
+      setMyCancellations(
+        rawItems.map((item) => ({
+          ...item,
+          participants: Array.isArray(item.participants)
+            ? item.participants
+            : [],
+          flakedParticipants: Array.isArray(item.flakedParticipants)
+            ? item.flakedParticipants
+            : [],
+        }))
+      );
+      if (data.profileNames && typeof data.profileNames === "object") {
+        setProfileNames(data.profileNames);
+      }
+    } catch {
+      /* ignore background refresh errors */
+    }
+  };
+
   useEffect(() => {
     if (!token || (step !== "flake" && step !== "result")) return;
     let cancelled = false;
     (async () => {
-      try {
-        const res = await fetch("/api/flake", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) return;
-        const data: {
-          items?: MyCancellationItem[];
-          profileNames?: Record<string, string>;
-        } = await res.json();
-        if (cancelled) return;
-        const rawItems = Array.isArray(data.items) ? data.items : [];
-        setMyCancellations(
-          rawItems.map((item) => ({
-            ...item,
-            participants: Array.isArray(item.participants)
-              ? item.participants
-              : [],
-            flakedParticipants: Array.isArray(item.flakedParticipants)
-              ? item.flakedParticipants
-              : [],
-          }))
-        );
-        if (data.profileNames && typeof data.profileNames === "object") {
-          setProfileNames(data.profileNames);
-        }
-      } catch {
-        if (!cancelled) setMyCancellations([]);
-      }
+      await refreshCancellations(token);
+      if (cancelled) setMyCancellations([]);
     })();
     return () => {
       cancelled = true;
@@ -560,6 +564,7 @@ export default function Home() {
       setMyCancellations((prev) =>
         prev.filter((x) => myCancellationRowKey(x) !== rowKey)
       );
+      refreshCancellations(token);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Something went wrong");
     } finally {
@@ -852,9 +857,15 @@ export default function Home() {
               )}
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium text-[#5a5a5a]">
-                    Who are you meeting?
-                  </span>
+                  <div className="min-w-0">
+                    <span className="text-sm font-medium text-[#5a5a5a]">
+                      Who are you meeting?
+                    </span>
+                    <p className="mt-1 text-xs leading-snug text-[#9a9a9a]">
+                      Each line is someone else at the plan — their number, not
+                      yours (you're already signed in).
+                    </p>
+                  </div>
                   <button
                     type="button"
                     disabled={loading}
@@ -1150,6 +1161,7 @@ export default function Home() {
                         .join(" · ")}
                     </p>
                   </div>
+                  {!item.mutual && (
                   <button
                     type="button"
                     disabled={loading || undoBusy}
@@ -1170,6 +1182,7 @@ export default function Home() {
                       <path d="M6 6l12 12M18 6L6 18" />
                     </svg>
                   </button>
+                  )}
                 </li>
               );
             })}

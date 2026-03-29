@@ -143,6 +143,48 @@ export function normalizePhone(
   return null;
 }
 
+/** Shown when the meeting field contains the signed-in user's number (strict or loose match). */
+export const FLAKE_TARGET_OWN_NUMBER_MSG =
+  "Enter the number of who you're meeting";
+
+const MIN_LOOSE_MATCH_LEN = 10;
+
+/** True when `raw` is probably the same handset as `selfE164`, even if `normalizePhone(raw)` failed. */
+function rawLooksLikeOwnNumber(
+  raw: string,
+  selfE164: string,
+  defaultCountry: CountryCode
+): boolean {
+  const a = raw.replace(/\D/g, "");
+  const b = selfE164.replace(/\D/g, "");
+  if (!a || !b) return false;
+  if (a === b) return true;
+
+  const shorter = a.length <= b.length ? a : b;
+  const longer = a.length <= b.length ? b : a;
+  if (shorter.length >= MIN_LOOSE_MATCH_LEN && longer.endsWith(shorter)) {
+    return true;
+  }
+
+  if (defaultCountry === "US" || defaultCountry === "CA") {
+    const stripLeadingOne = (d: string) =>
+      d.length === 11 && d.startsWith("1") ? d.slice(1) : d;
+    const an = stripLeadingOne(a);
+    const bn = stripLeadingOne(b);
+    if (
+      an.length >= MIN_LOOSE_MATCH_LEN &&
+      bn.length >= MIN_LOOSE_MATCH_LEN &&
+      an === bn
+    ) {
+      return true;
+    }
+    if (an.length === 10 && bn.endsWith(an)) return true;
+    if (bn.length === 10 && an.endsWith(bn)) return true;
+  }
+
+  return false;
+}
+
 export type FlakeTargetAnalysis =
   | { ok: true; targetsE164: string[] }
   | { ok: false; error: string };
@@ -161,7 +203,11 @@ export function analyzeFlakeTargetInput(
     .filter(Boolean);
 
   if (nonEmpty.length === 0) {
-    return { ok: false, error: "Add the other person's phone number." };
+    return {
+      ok: false,
+      error:
+        "Add who you're meeting — the other person's mobile number (not yours).",
+    };
   }
 
   const pairs = nonEmpty.map((raw) => ({
@@ -171,17 +217,26 @@ export function analyzeFlakeTargetInput(
 
   for (const p of pairs) {
     if (p.e164 && selfE164 && p.e164 === selfE164) {
-      return {
-        ok: false,
-        error: "Don't add your own number — use the other person's phone.",
-      };
+      return { ok: false, error: FLAKE_TARGET_OWN_NUMBER_MSG };
+    }
+  }
+
+  if (selfE164) {
+    for (const p of pairs) {
+      if (!p.e164 && rawLooksLikeOwnNumber(p.raw, selfE164, defaultCountry)) {
+        return { ok: false, error: FLAKE_TARGET_OWN_NUMBER_MSG };
+      }
     }
   }
 
   const invalid = pairs.filter((p) => !p.e164);
   if (invalid.length > 0) {
     if (pairs.length === 1) {
-      return { ok: false, error: "Enter a valid phone number." };
+      return {
+        ok: false,
+        error:
+          "Enter a valid mobile number for someone you're meeting — not your own.",
+      };
     }
     return {
       ok: false,

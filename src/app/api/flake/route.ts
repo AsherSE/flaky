@@ -83,21 +83,32 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Session expired" }, { status: 401 });
   }
 
-  const flakeKeys = await redis.smembers(userFlakesIndexKey(myPhone));
+  const indexKey = userFlakesIndexKey(myPhone);
+  const flakeKeys = await redis.smembers(indexKey);
+  const staleKeys: string[] = [];
   const items = await Promise.all(
     flakeKeys.map(async (flakeKey) => {
       const parsed = parseFlakeRedisKey(flakeKey);
-      if (!parsed) return null;
+      if (!parsed) {
+        staleKeys.push(flakeKey);
+        return null;
+      }
 
       const raw = await redis.get<unknown>(flakeKey);
-      if (!Array.isArray(raw)) return null;
+      if (!Array.isArray(raw)) {
+        staleKeys.push(flakeKey);
+        return null;
+      }
 
       const flaked = Array.from(
         new Set(
           raw.filter((x): x is string => typeof x === "string" && x.length > 0)
         )
       );
-      if (!flaked.includes(myPhone)) return null;
+      if (!flaked.includes(myPhone)) {
+        staleKeys.push(flakeKey);
+        return null;
+      }
 
       const total = parsed.participants.length;
       const cancelledCount = flaked.length;
@@ -113,6 +124,10 @@ export async function GET(req: NextRequest) {
       };
     })
   );
+
+  if (staleKeys.length > 0) {
+    redis.srem(indexKey, ...staleKeys).catch(() => {});
+  }
 
   const list = items.filter(
     (x): x is NonNullable<typeof x> => x != null
@@ -255,6 +270,17 @@ export async function DELETE(req: NextRequest) {
 
   const flakeKey = `flake:${sorted.join(":")}:${date}`;
   const raw = await redis.get<string[]>(flakeKey);
+
+  if (Array.isArray(raw)) {
+    const uniqueFlaked = Array.from(new Set(raw.filter(Boolean)));
+    const isMutual = sorted.every((p) => uniqueFlaked.includes(p));
+    if (isMutual) {
+      return NextResponse.json(
+        { error: "Cannot undo — everyone already agreed to cancel" },
+        { status: 409 }
+      );
+    }
+  }
 
   await redis.srem(userFlakesIndexKey(myPhone), flakeKey);
 
