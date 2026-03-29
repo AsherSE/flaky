@@ -72,18 +72,24 @@ export function isKnownCountryCode(
   return KNOWN.has(region.toUpperCase());
 }
 
-/** Prefer explicit client hint; else region from Accept-Language; else fallback (US). */
+/**
+ * Prefer explicit client hint; then Vercel IP-country header;
+ * then region from Accept-Language; else US.
+ */
 export function resolvePhoneRegion(
   fromBody: unknown,
   acceptLanguage: string | null,
-  fallback: CountryCode = "US"
+  ipCountry?: string | null,
 ): CountryCode {
   if (typeof fromBody === "string" && isKnownCountryCode(fromBody)) {
     return fromBody.toUpperCase() as CountryCode;
   }
+  if (typeof ipCountry === "string" && isKnownCountryCode(ipCountry)) {
+    return ipCountry.toUpperCase() as CountryCode;
+  }
   const fromLang = regionFromAcceptLanguage(acceptLanguage);
   if (fromLang) return fromLang;
-  return fallback;
+  return "US";
 }
 
 function regionFromAcceptLanguage(header: string | null): CountryCode | undefined {
@@ -132,13 +138,6 @@ export function normalizePhone(
 
   const national = parsePhoneNumberFromString(trimmed, defaultCountry);
   if (national?.isValid()) return national.format("E.164");
-
-  // National digits-only fallback when libphonenumber is stricter (e.g. unusual separators).
-  if (defaultCountry === "US") {
-    const digits = trimmed.replace(/\D/g, "");
-    if (digits.length === 10) return `+1${digits}`;
-    if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  }
 
   return null;
 }

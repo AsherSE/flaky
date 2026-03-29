@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   analyzeFlakeTargetInput,
   normalizePhone,
@@ -221,8 +221,9 @@ export default function Home() {
   const [undoingFlakeKey, setUndoingFlakeKey] = useState<string | null>(null);
   const [phoneRegion, setPhoneRegion] = useState<CountryCode>("US");
   const [capacitorIos, setCapacitorIos] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     setPhoneRegion(inferPhoneRegionFromNavigator());
     setCapacitorIos(isCapacitorIOS());
   }, []);
@@ -328,6 +329,12 @@ export default function Home() {
     setStep("phone");
   };
 
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const id = setTimeout(() => setResendCooldown((n) => n - 1), 1000);
+    return () => clearTimeout(id);
+  }, [resendCooldown]);
+
   const handleSendCode = async () => {
     setLoading(true);
     setError("");
@@ -340,6 +347,7 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send code");
       setStep("code");
+      setResendCooldown(30);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Something went wrong");
     } finally {
@@ -380,7 +388,10 @@ export default function Home() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Invalid code");
-      const newToken = data.token as string;
+      if (typeof data.token !== "string" || !data.token) {
+        throw new Error("Invalid session — try again");
+      }
+      const newToken = data.token;
       setToken(newToken);
       localStorage.setItem(TOKEN_KEY, newToken);
 
@@ -485,41 +496,7 @@ export default function Home() {
       }
       setResult(data);
       setStep("result");
-      void (async () => {
-        try {
-          const listRes = await fetch("/api/flake", {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (listRes.ok) {
-            const listData: {
-              items?: MyCancellationItem[];
-              profileNames?: Record<string, string>;
-            } = await listRes.json();
-            const rawItems = Array.isArray(listData.items)
-              ? listData.items
-              : [];
-            setMyCancellations(
-              rawItems.map((item) => ({
-                ...item,
-                participants: Array.isArray(item.participants)
-                  ? item.participants
-                  : [],
-                flakedParticipants: Array.isArray(item.flakedParticipants)
-                  ? item.flakedParticipants
-                  : [],
-              }))
-            );
-            if (
-              listData.profileNames &&
-              typeof listData.profileNames === "object"
-            ) {
-              setProfileNames(listData.profileNames);
-            }
-          }
-        } catch {
-          /* list refresh is optional */
-        }
-      })();
+      if (token) void refreshCancellations(token);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Something went wrong");
     } finally {
@@ -556,7 +533,12 @@ export default function Home() {
         body: JSON.stringify({ date: item.date, participants }),
       });
       const data: { error?: string } = await res.json().catch(() => ({}));
-      if (!res.ok && res.status !== 404 && res.status !== 409) {
+      if (res.status === 409) {
+        setError(typeof data.error === "string" ? data.error : "Cannot undo");
+        if (token) void refreshCancellations(token);
+        return;
+      }
+      if (!res.ok && res.status !== 404) {
         if (res.status === 401) signOut();
         throw new Error(
           typeof data.error === "string" ? data.error : "Could not update"
@@ -573,7 +555,7 @@ export default function Home() {
   };
 
   return (
-    <main className="h-dvh max-h-dvh overflow-y-auto overscroll-none bg-gradient-to-b from-[#faf8f5] to-[#f0ece6]">
+    <main className="h-[100vh] h-[100dvh] max-h-[100vh] max-h-[100dvh] overflow-y-auto overscroll-none bg-gradient-to-b from-[#faf8f5] to-[#f0ece6]">
       <div
         className={
           capacitorIos
@@ -701,13 +683,13 @@ export default function Home() {
                   maxLength={6}
                   className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-2xl text-center tracking-[0.3em] text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
                   onKeyDown={(e) =>
-                    e.key === "Enter" && code.length >= 4 && handleVerifyCode()
+                    e.key === "Enter" && !loading && code.length >= 6 && handleVerifyCode()
                   }
                 />
               </label>
               <button
                 onClick={handleVerifyCode}
-                disabled={loading || code.length < 4}
+                disabled={loading || code.length < 6}
                 className="w-full py-3 bg-[#e07a5f] text-white rounded-xl font-medium hover:bg-[#d06a4f] active:bg-[#c05a3f] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {loading ? "Verifying..." : "Verify"}
@@ -721,6 +703,14 @@ export default function Home() {
                 className="w-full py-2 text-sm text-[#8a8a8a] hover:text-[#5a5a5a] transition-colors"
               >
                 Use a different number
+              </button>
+              <button
+                type="button"
+                disabled={loading || resendCooldown > 0}
+                onClick={() => void handleSendCode()}
+                className="w-full py-2 text-sm text-[#8a8a8a] hover:text-[#5a5a5a] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {resendCooldown > 0 ? `Resend code (${resendCooldown}s)` : "Resend code"}
               </button>
             </div>
           ) : step === "name" ? (
@@ -979,6 +969,7 @@ export default function Home() {
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
                   min={localYmd()}
+                  max={localYmd(new Date(Date.now() + 90 * 86_400_000))}
                   className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] bg-transparent transition-colors"
                 />
               </label>
@@ -1189,13 +1180,12 @@ export default function Home() {
         ) : null}
 
         <div className="flex justify-center mt-6">
-          <button
-            type="button"
-            onClick={() => {}}
+          <a
+            href="mailto:feedback@flaky.me?subject=Flaky%20feedback"
             className="text-xs text-[#bbb] hover:text-[#888] transition-colors"
           >
             Feedback
-          </button>
+          </a>
         </div>
         </div>
       </div>

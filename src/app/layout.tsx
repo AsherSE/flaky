@@ -19,7 +19,6 @@ function absoluteSiteUrl(): URL {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
   themeColor: "#e07a5f",
 };
 
@@ -32,7 +31,7 @@ export const metadata: Metadata = {
   description: siteDescription,
   applicationName: "flaky",
   icons: {
-    icon: [{ url: "/logo.png", type: "image/png", sizes: "650x662" }],
+    icon: [{ url: "/logo.png", type: "image/png", sizes: "512x512" }],
     apple: [{ url: "/logo.png", type: "image/png" }],
     shortcut: "/logo.png",
   },

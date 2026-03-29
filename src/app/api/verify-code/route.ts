@@ -2,16 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { normalizePhone, resolvePhoneRegion } from "@/lib/phone";
 import { checkVerification } from "@/lib/twilio";
 import { redis } from "@/lib/redis";
+import { rateLimit, rateLimitError } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const rawPhone = body?.phone;
-  const code = body?.code;
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const o = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  const rawPhone = o.phone;
+  const code = typeof o.code === "string" ? o.code : "";
   const region = resolvePhoneRegion(
-    body?.defaultCountry,
-    req.headers.get("accept-language")
+    o.defaultCountry,
+    req.headers.get("accept-language"),
+    req.headers.get("x-vercel-ip-country"),
   );
   const phone = normalizePhone(
     typeof rawPhone === "string" ? rawPhone : "",
@@ -30,6 +39,11 @@ export async function POST(req: NextRequest) {
       { error: "Enter the code we sent you" },
       { status: 400 }
     );
+  }
+
+  const allowed = await rateLimit(`rl:verify:${phone}`, 5, 600);
+  if (!allowed) {
+    return NextResponse.json(rateLimitError(60), { status: 429 });
   }
 
   try {

@@ -4,7 +4,6 @@ import {
   analyzeFlakeTargetInput,
   normalizePhone,
   resolvePhoneRegion,
-  type CountryCode,
 } from "@/lib/phone";
 import { getRandomMessage } from "@/lib/messages";
 import { sendSMS } from "@/lib/twilio";
@@ -13,12 +12,12 @@ import { profileKey } from "@/lib/profile";
 export const dynamic = "force-dynamic";
 
 const SEVEN_DAYS = 7 * 24 * 60 * 60;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function userFlakesIndexKey(phone: string) {
   return `userFlakes:${phone}`;
 }
 
-/** Parse `flake:+p1:+p2:YYYY-MM-DD` — phones are +digits only so they never contain `:`. */
 function parseFlakeRedisKey(flakeKey: string): {
   participants: string[];
   date: string;
@@ -26,7 +25,7 @@ function parseFlakeRedisKey(flakeKey: string): {
   const parts = flakeKey.split(":");
   if (parts.length < 4 || parts[0] !== "flake") return null;
   const date = parts[parts.length - 1]!.trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  if (!DATE_RE.test(date)) return null;
   const participants = parts.slice(1, -1);
   if (participants.length < 2) return null;
   return { participants, date };
@@ -57,7 +56,33 @@ function rawTargetSlotsFromBody(body: unknown): string[] | null {
   return null;
 }
 
-async function loadProfileNames(phones: string[]): Promise<Record<string, string>> {
+/**
+ * Read flake members from Redis. New keys are Redis Sets (SMEMBERS);
+ * legacy keys are JSON string arrays (GET + parse). Returns empty array on miss.
+ */
+async function getFlakeMembers(flakeKey: string): Promise<string[]> {
+  try {
+    const members = await redis.smembers(flakeKey);
+    if (Array.isArray(members) && members.length > 0) return members;
+  } catch {
+    /* key may be a legacy string value — fall through */
+  }
+  try {
+    const raw = await redis.get<unknown>(flakeKey);
+    if (Array.isArray(raw)) {
+      return raw.filter(
+        (x): x is string => typeof x === "string" && x.length > 0
+      );
+    }
+  } catch {
+    /* expired or corrupt */
+  }
+  return [];
+}
+
+async function loadProfileNames(
+  phones: string[]
+): Promise<Record<string, string>> {
   const unique = Array.from(new Set(phones.filter(Boolean)));
   if (!unique.length) return {};
 
@@ -70,6 +95,10 @@ async function loadProfileNames(phones: string[]): Promise<Record<string, string
   });
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// GET — list my active flakes
+// ---------------------------------------------------------------------------
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
@@ -86,6 +115,7 @@ export async function GET(req: NextRequest) {
   const indexKey = userFlakesIndexKey(myPhone);
   const flakeKeys = await redis.smembers(indexKey);
   const staleKeys: string[] = [];
+
   const items = await Promise.all(
     flakeKeys.map(async (flakeKey) => {
       const parsed = parseFlakeRedisKey(flakeKey);
@@ -94,18 +124,8 @@ export async function GET(req: NextRequest) {
         return null;
       }
 
-      const raw = await redis.get<unknown>(flakeKey);
-      if (!Array.isArray(raw)) {
-        staleKeys.push(flakeKey);
-        return null;
-      }
-
-      const flaked = Array.from(
-        new Set(
-          raw.filter((x): x is string => typeof x === "string" && x.length > 0)
-        )
-      );
-      if (!flaked.includes(myPhone)) {
+      const flaked = await getFlakeMembers(flakeKey);
+      if (flaked.length === 0 || !flaked.includes(myPhone)) {
         staleKeys.push(flakeKey);
         return null;
       }
@@ -143,6 +163,10 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ items: list, profileNames });
 }
 
+// ---------------------------------------------------------------------------
+// POST — record a flake (atomic SADD)
+// ---------------------------------------------------------------------------
+
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
@@ -155,11 +179,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Session expired" }, { status: 401 });
   }
 
-  const body = await req.json();
-  const { date } = body;
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const o = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  const date = typeof o.date === "string" ? o.date.trim() : "";
+  if (!DATE_RE.test(date)) {
+    return NextResponse.json({ error: "Pick a valid date" }, { status: 400 });
+  }
+
   const region = resolvePhoneRegion(
-    body?.defaultCountry,
-    req.headers.get("accept-language")
+    o.defaultCountry,
+    req.headers.get("accept-language"),
+    req.headers.get("x-vercel-ip-country"),
   );
   const rawSlots = rawTargetSlotsFromBody(body);
   if (!rawSlots) {
@@ -172,37 +208,15 @@ export async function POST(req: NextRequest) {
   }
   const targets = analysis.targetsE164;
 
-  if (!date) {
-    return NextResponse.json(
-      { error: "Pick a day" },
-      { status: 400 }
-    );
-  }
-
-  // Canonical key: sorted phones so the same group shares one record no matter who submits
   const participants = Array.from(new Set([myPhone, ...targets])).sort();
   const flakeKey = `flake:${participants.join(":")}:${date}`;
 
-  const existing = (await redis.get<string[]>(flakeKey)) ?? [];
-  const uniqueExisting = Array.from(new Set(existing));
-
-  function everyoneFlaked(flaked: string[]) {
-    return participants.every((p) => flaked.includes(p));
-  }
-
-  // Already flaked — return current outcome
-  if (uniqueExisting.includes(myPhone)) {
-    await rememberUserFlaked(myPhone, flakeKey);
-    const isMutual = everyoneFlaked(uniqueExisting);
-    const message = isMutual ? getRandomMessage() : "";
-    return NextResponse.json({ mutual: isMutual, message });
-  }
-
-  const updated = Array.from(new Set([...uniqueExisting, myPhone]));
-  await redis.set(flakeKey, updated, { ex: SEVEN_DAYS });
+  await redis.sadd(flakeKey, myPhone);
+  await redis.expire(flakeKey, SEVEN_DAYS);
   await rememberUserFlaked(myPhone, flakeKey);
 
-  const isMutual = everyoneFlaked(updated);
+  const flaked = await getFlakeMembers(flakeKey);
+  const isMutual = participants.every((p) => flaked.includes(p));
 
   if (isMutual) {
     const message = getRandomMessage();
@@ -221,6 +235,10 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ mutual: false, message: "" });
 }
+
+// ---------------------------------------------------------------------------
+// DELETE — undo a flake (atomic SREM)
+// ---------------------------------------------------------------------------
 
 export async function DELETE(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
@@ -247,20 +265,23 @@ export async function DELETE(req: NextRequest) {
 
   const o = body as Record<string, unknown>;
   const date = typeof o.date === "string" ? o.date.trim() : "";
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+  if (!DATE_RE.test(date)) {
     return NextResponse.json({ error: "Invalid date" }, { status: 400 });
   }
 
   const rawParts = Array.isArray(o.participants) ? o.participants : null;
   if (!rawParts?.length) {
-    return NextResponse.json({ error: "Invalid participants" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid participants" },
+      { status: 400 }
+    );
   }
 
   const sorted = Array.from(
     new Set(
       rawParts
         .map((p) => (typeof p === "string" ? normalizePhone(p) : ""))
-        .filter(Boolean)
+        .filter((p): p is string => !!p)
     )
   ).sort();
 
@@ -269,11 +290,10 @@ export async function DELETE(req: NextRequest) {
   }
 
   const flakeKey = `flake:${sorted.join(":")}:${date}`;
-  const raw = await redis.get<string[]>(flakeKey);
 
-  if (Array.isArray(raw)) {
-    const uniqueFlaked = new Set(raw.filter(Boolean));
-    const isMutual = sorted.every((p): boolean => !!p && uniqueFlaked.has(p));
+  const flaked = await getFlakeMembers(flakeKey);
+  if (flaked.length > 0) {
+    const isMutual = sorted.every((p) => flaked.includes(p));
     if (isMutual) {
       return NextResponse.json(
         { error: "Cannot undo — everyone already agreed to cancel" },
@@ -283,15 +303,7 @@ export async function DELETE(req: NextRequest) {
   }
 
   await redis.srem(userFlakesIndexKey(myPhone), flakeKey);
-
-  if (Array.isArray(raw) && raw.includes(myPhone)) {
-    const updated = raw.filter((p) => p !== myPhone);
-    if (updated.length === 0) {
-      await redis.del(flakeKey);
-    } else {
-      await redis.set(flakeKey, updated, { ex: SEVEN_DAYS });
-    }
-  }
+  await redis.srem(flakeKey, myPhone);
 
   return NextResponse.json({ ok: true });
 }
