@@ -452,6 +452,7 @@ export default function Home() {
 
   const handleFlake = async () => {
     setError("");
+    if (!targetPhones.some((t) => t.trim())) return;
     const self = normalizePhone(phone, phoneRegion);
     const flakeCheck = analyzeFlakeTargetInput(
       targetPhones,
@@ -857,15 +858,9 @@ export default function Home() {
               )}
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <span className="text-sm font-medium text-[#5a5a5a]">
-                      Who are you meeting?
-                    </span>
-                    <p className="mt-1 text-xs leading-snug text-[#9a9a9a]">
-                      Each line is someone else at the plan — their number, not
-                      yours (you're already signed in).
-                    </p>
-                  </div>
+                  <span className="text-sm font-medium text-[#5a5a5a]">
+                    Who are you meeting?
+                  </span>
                   <button
                     type="button"
                     disabled={loading}
@@ -990,7 +985,11 @@ export default function Home() {
               </label>
               <button
                 onClick={handleFlake}
-                disabled={loading || !date}
+                disabled={
+                  loading ||
+                  !date ||
+                  !targetPhones.some((t) => t.trim().length > 0)
+                }
                 className="w-full py-3 bg-[#e07a5f] text-white rounded-xl font-medium hover:bg-[#d06a4f] active:bg-[#c05a3f] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {loading ? "..." : "I want to cancel"}

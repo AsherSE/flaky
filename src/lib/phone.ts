@@ -144,8 +144,7 @@ export function normalizePhone(
 }
 
 /** Shown when the meeting field contains the signed-in user's number (strict or loose match). */
-export const FLAKE_TARGET_OWN_NUMBER_MSG =
-  "Enter the number of who you're meeting";
+export const FLAKE_TARGET_OWN_NUMBER_MSG = "Not your number.";
 
 const MIN_LOOSE_MATCH_LEN = 10;
 
@@ -203,11 +202,7 @@ export function analyzeFlakeTargetInput(
     .filter(Boolean);
 
   if (nonEmpty.length === 0) {
-    return {
-      ok: false,
-      error:
-        "Add who you're meeting — the other person's mobile number (not yours).",
-    };
+    return { ok: false, error: "Invalid request" };
   }
 
   const pairs = nonEmpty.map((raw) => ({
@@ -232,11 +227,7 @@ export function analyzeFlakeTargetInput(
   const invalid = pairs.filter((p) => !p.e164);
   if (invalid.length > 0) {
     if (pairs.length === 1) {
-      return {
-        ok: false,
-        error:
-          "Enter a valid mobile number for someone you're meeting — not your own.",
-      };
+      return { ok: false, error: "Not a valid number." };
     }
     return {
       ok: false,
