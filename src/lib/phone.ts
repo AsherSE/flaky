@@ -144,7 +144,7 @@ export function normalizePhone(
 }
 
 /** Shown when the meeting field contains the signed-in user's number (strict or loose match). */
-export const FLAKE_TARGET_OWN_NUMBER_MSG = "Not your number.";
+export const FLAKE_TARGET_OWN_NUMBER_MSG = "Enter someone else's number.";
 
 const MIN_LOOSE_MATCH_LEN = 10;
 
@@ -227,7 +227,7 @@ export function analyzeFlakeTargetInput(
   const invalid = pairs.filter((p) => !p.e164);
   if (invalid.length > 0) {
     if (pairs.length === 1) {
-      return { ok: false, error: "Not a valid number." };
+      return { ok: false, error: "Enter a valid number." };
     }
     return {
       ok: false,
