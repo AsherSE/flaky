@@ -149,9 +149,8 @@ function cancellationPieConicGradient(
   const stops: string[] = [];
   for (let i = 0; i < n; i++) {
     const p = ordered[i]!;
-    /* 0deg = top; map i so wedges run counter-clockwise from 12 o'clock. */
-    const start = ((n - 1 - i) / n) * 100;
-    const end = ((n - i) / n) * 100;
+    const start = (i / n) * 100;
+    const end = ((i + 1) / n) * 100;
     const color = flaked.has(p) ? identiconColorFromPhone(p) : PIE_MEETING_GREY;
     stops.push(`${color} ${start}% ${end}%`);
   }
