@@ -911,39 +911,41 @@ export default function Home() {
                           placeholder="Their mobile number"
                           className="mt-1 block w-full min-w-0 px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
                         />
-                        <button
-                          type="button"
-                          disabled={loading}
-                          onClick={async () => {
-                            const picked = await pickPhoneFromContacts();
-                            if (picked) {
-                              setTargetPhones((prev) => {
-                                const next = [...prev];
-                                next[index] = picked;
-                                return next;
-                              });
-                            }
-                          }}
-                          className="shrink-0 ml-2 mb-1 flex h-8 w-8 items-center justify-center rounded-full text-[#8a8a8a] hover:bg-[#f0ece6] hover:text-[#5a5a5a] active:bg-[#e8e4dd] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                          aria-label="Pick from contacts"
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth={1.75}
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="h-5 w-5"
-                            aria-hidden
+                        {capacitorIos && (
+                          <button
+                            type="button"
+                            disabled={loading}
+                            onClick={async () => {
+                              const picked = await pickPhoneFromContacts();
+                              if (picked) {
+                                setTargetPhones((prev) => {
+                                  const next = [...prev];
+                                  next[index] = picked;
+                                  return next;
+                                });
+                              }
+                            }}
+                            className="shrink-0 ml-2 mb-1 flex h-8 w-8 items-center justify-center rounded-full text-[#8a8a8a] hover:bg-[#f0ece6] hover:text-[#5a5a5a] active:bg-[#e8e4dd] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            aria-label="Pick from contacts"
                           >
-                            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                            <circle cx="9" cy="7" r="4" />
-                            <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-                            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                          </svg>
-                        </button>
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth={1.75}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className="h-5 w-5"
+                              aria-hidden
+                            >
+                              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                              <circle cx="9" cy="7" r="4" />
+                              <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                            </svg>
+                          </button>
+                        )}
                       </div>
                     </label>
                     {targetPhones.length > 1 && (
