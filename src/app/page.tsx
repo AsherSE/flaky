@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import {
   analyzeFlakeTargetInput,
   normalizePhone,
+  regionFromE164,
   inferPhoneRegionFromNavigator,
   getRegionOptions,
   callingCodeForRegion,
@@ -261,7 +262,11 @@ export default function Home() {
         const data: { phone?: string; name?: string } = await res.json();
         if (cancelled) return;
         setToken(stored);
-        if (data.phone) setPhone(data.phone);
+        if (data.phone) {
+          setPhone(data.phone);
+          const detected = regionFromE164(data.phone);
+          if (detected) setPhoneRegion(detected);
+        }
         const fn = typeof data.name === "string" ? data.name.trim() : "";
         setProfileName(fn);
         setOnboardingName(fn);
@@ -413,6 +418,8 @@ export default function Home() {
         await sessionRes.json();
       if (typeof sessionData.phone === "string" && sessionData.phone) {
         setPhone(sessionData.phone);
+        const detected = regionFromE164(sessionData.phone);
+        if (detected) setPhoneRegion(detected);
       }
       const fn =
         typeof sessionData.name === "string" ? sessionData.name.trim() : "";
@@ -504,7 +511,8 @@ export default function Home() {
         if (res.status === 401) signOut();
         throw new Error(data.error || "Something went wrong");
       }
-      setResult({ type: "penciled", mutual: false, message: "" });
+      const smsWarn = typeof data.smsWarning === "string" ? data.smsWarning : "";
+      setResult({ type: "penciled", mutual: false, message: smsWarn });
       setStep("result");
       if (token) void refreshCancellations(token);
     } catch (e: unknown) {
@@ -1039,7 +1047,9 @@ export default function Home() {
                     Penciled in!
                   </h2>
                   <p className="text-[#6a6a6a] leading-relaxed">
-                    They&apos;ll get a text about it. If anyone secretly wants out, they can tap the X.
+                    {result.message
+                      ? result.message
+                      : "They\u2019ll get a text about it. If anyone secretly wants out, they can tap the X."}
                   </p>
                 </>
               ) : result.mutual ? (

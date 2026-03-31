@@ -251,17 +251,28 @@ export async function POST(req: NextRequest) {
   const creatorName = await redis.get<string>(profileKey(myPhone));
   const who = creatorName || "Someone";
   const smsBody = `${who} penciled you in for plans on ${date}! Open flaky to see your plans: https://flaky.me\n\n— flaky`;
-  await Promise.all(
+  const smsResults = await Promise.all(
     targets.map(async (to) => {
       try {
         await sendSMS(to, smsBody);
+        return { to, ok: true };
       } catch (e) {
-        console.error("Failed to send invitation SMS:", e);
+        console.error("Failed to send invitation SMS to", to, ":", e);
+        return { to, ok: false, error: e instanceof Error ? e.message : String(e) };
       }
     })
   );
+  const smsFailed = smsResults.filter((r) => !r.ok);
+  if (smsFailed.length > 0) {
+    console.error("SMS failures:", JSON.stringify(smsFailed));
+  }
 
-  return NextResponse.json({ penciled: true });
+  return NextResponse.json({
+    penciled: true,
+    smsWarning: smsFailed.length > 0
+      ? `Text couldn\u2019t be sent to ${smsFailed.length} number${smsFailed.length > 1 ? "s" : ""}. They can still find the meeting when they open flaky.`
+      : null,
+  });
 }
 
 // ---------------------------------------------------------------------------

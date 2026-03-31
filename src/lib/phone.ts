@@ -65,6 +65,12 @@ export function callingCodeForRegion(cc: CountryCode): string {
   return getCountryCallingCode(cc);
 }
 
+/** Extract the country from an E.164 number (e.g. "+14243309379" -> "US"). */
+export function regionFromE164(e164: string): CountryCode | null {
+  const parsed = parsePhoneNumberFromString(e164);
+  return parsed?.country ?? null;
+}
+
 export function isKnownCountryCode(
   region: string | null | undefined
 ): region is CountryCode {
