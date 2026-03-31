@@ -134,7 +134,7 @@ export function normalizePhone(
     const intl = parsePhoneNumberFromString(trimmed);
     if (intl?.isValid()) return intl.format("E.164");
     return null;
-  }
+  } 
 
   const national = parsePhoneNumberFromString(trimmed, defaultCountry);
   if (national?.isValid()) return national.format("E.164");
