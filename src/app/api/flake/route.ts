@@ -31,7 +31,7 @@ function parseFlakeRedisKey(flakeKey: string): {
   return { participants, date };
 }
 
-async function rememberUserFlaked(phone: string, flakeKey: string) {
+async function indexMeetingForUser(phone: string, flakeKey: string) {
   await redis.sadd(userFlakesIndexKey(phone), flakeKey);
   await redis.expire(userFlakesIndexKey(phone), SEVEN_DAYS);
 }
@@ -57,8 +57,9 @@ function rawTargetSlotsFromBody(body: unknown): string[] | null {
 }
 
 /**
- * Read flake members from Redis. New keys are Redis Sets (SMEMBERS);
- * legacy keys are JSON string arrays (GET + parse). Returns empty array on miss.
+ * Read flake members (who opted to cancel) from Redis. New keys are Redis Sets
+ * (SMEMBERS); legacy keys are JSON string arrays (GET + parse). Returns empty
+ * array on miss — which means nobody has cancelled yet.
  */
 async function getFlakeMembers(flakeKey: string): Promise<string[]> {
   try {
@@ -96,8 +97,46 @@ async function loadProfileNames(
   return out;
 }
 
+function resolveParticipantsFromBody(
+  body: unknown,
+  myPhone: string,
+  req: NextRequest
+): { sorted: string[]; flakeKey: string; date: string } | NextResponse {
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+  }
+  const o = body as Record<string, unknown>;
+  const date = typeof o.date === "string" ? o.date.trim() : "";
+  if (!DATE_RE.test(date)) {
+    return NextResponse.json({ error: "Invalid date" }, { status: 400 });
+  }
+
+  const rawParts = Array.isArray(o.participants) ? o.participants : null;
+  if (!rawParts?.length) {
+    return NextResponse.json(
+      { error: "Invalid participants" },
+      { status: 400 }
+    );
+  }
+
+  const sorted = Array.from(
+    new Set(
+      rawParts
+        .map((p) => (typeof p === "string" ? normalizePhone(p) : ""))
+        .filter((p): p is string => !!p)
+    )
+  ).sort();
+
+  if (sorted.length < 2 || !sorted.includes(myPhone)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const flakeKey = `flake:${sorted.join(":")}:${date}`;
+  return { sorted, flakeKey, date };
+}
+
 // ---------------------------------------------------------------------------
-// GET — list my active flakes
+// GET — list all my meetings
 // ---------------------------------------------------------------------------
 
 export async function GET(req: NextRequest) {
@@ -125,10 +164,6 @@ export async function GET(req: NextRequest) {
       }
 
       const flaked = await getFlakeMembers(flakeKey);
-      if (flaked.length === 0 || !flaked.includes(myPhone)) {
-        staleKeys.push(flakeKey);
-        return null;
-      }
 
       const total = parsed.participants.length;
       const cancelledCount = flaked.length;
@@ -164,7 +199,7 @@ export async function GET(req: NextRequest) {
 }
 
 // ---------------------------------------------------------------------------
-// POST — record a flake (atomic SADD)
+// POST — "Pencil In" (create meeting, no auto-cancel)
 // ---------------------------------------------------------------------------
 
 export async function POST(req: NextRequest) {
@@ -211,22 +246,66 @@ export async function POST(req: NextRequest) {
   const participants = Array.from(new Set([myPhone, ...targets])).sort();
   const flakeKey = `flake:${participants.join(":")}:${date}`;
 
+  await Promise.all(participants.map((p) => indexMeetingForUser(p, flakeKey)));
+
+  const creatorName = await redis.get<string>(profileKey(myPhone));
+  const who = creatorName || "Someone";
+  const smsBody = `${who} penciled you in for plans on ${date}! Open flaky to see your plans: https://flaky.me\n\n— flaky`;
+  await Promise.all(
+    targets.map(async (to) => {
+      try {
+        await sendSMS(to, smsBody);
+      } catch (e) {
+        console.error("Failed to send invitation SMS:", e);
+      }
+    })
+  );
+
+  return NextResponse.json({ penciled: true });
+}
+
+// ---------------------------------------------------------------------------
+// PUT — opt to cancel (the X button)
+// ---------------------------------------------------------------------------
+
+export async function PUT(req: NextRequest) {
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const sessionToken = authHeader.slice(7);
+  const myPhone = await redis.get<string>(`session:${sessionToken}`);
+  if (!myPhone) {
+    return NextResponse.json({ error: "Session expired" }, { status: 401 });
+  }
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const result = resolveParticipantsFromBody(body, myPhone, req);
+  if (result instanceof NextResponse) return result;
+  const { sorted, flakeKey, date } = result;
+
   await redis.sadd(flakeKey, myPhone);
   await redis.expire(flakeKey, SEVEN_DAYS);
-  await rememberUserFlaked(myPhone, flakeKey);
 
   const flaked = await getFlakeMembers(flakeKey);
-  const isMutual = participants.every((p) => flaked.includes(p));
+  const isMutual = sorted.every((p) => flaked.includes(p));
 
   if (isMutual) {
     const message = getRandomMessage();
     const smsBody = `${message}\n\nYour plans for ${date} just got cancelled — and honestly, everyone wanted out. Guilt-free.\n\n— flaky`;
     await Promise.all(
-      participants.map(async (to) => {
+      sorted.map(async (to) => {
         try {
           await sendSMS(to, smsBody);
         } catch (e) {
-          console.error("Failed to send notification SMS:", e);
+          console.error("Failed to send cancellation SMS:", e);
         }
       })
     );
@@ -237,7 +316,7 @@ export async function POST(req: NextRequest) {
 }
 
 // ---------------------------------------------------------------------------
-// DELETE — undo a flake (atomic SREM)
+// DELETE — undo cancel (keep user in meeting)
 // ---------------------------------------------------------------------------
 
 export async function DELETE(req: NextRequest) {
@@ -259,37 +338,9 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  if (!body || typeof body !== "object") {
-    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
-  }
-
-  const o = body as Record<string, unknown>;
-  const date = typeof o.date === "string" ? o.date.trim() : "";
-  if (!DATE_RE.test(date)) {
-    return NextResponse.json({ error: "Invalid date" }, { status: 400 });
-  }
-
-  const rawParts = Array.isArray(o.participants) ? o.participants : null;
-  if (!rawParts?.length) {
-    return NextResponse.json(
-      { error: "Invalid participants" },
-      { status: 400 }
-    );
-  }
-
-  const sorted = Array.from(
-    new Set(
-      rawParts
-        .map((p) => (typeof p === "string" ? normalizePhone(p) : ""))
-        .filter((p): p is string => !!p)
-    )
-  ).sort();
-
-  if (sorted.length < 2 || !sorted.includes(myPhone)) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  const flakeKey = `flake:${sorted.join(":")}:${date}`;
+  const result = resolveParticipantsFromBody(body, myPhone, req);
+  if (result instanceof NextResponse) return result;
+  const { sorted, flakeKey } = result;
 
   const flaked = await getFlakeMembers(flakeKey);
   if (flaked.length > 0) {
@@ -302,7 +353,6 @@ export async function DELETE(req: NextRequest) {
     }
   }
 
-  await redis.srem(userFlakesIndexKey(myPhone), flakeKey);
   await redis.srem(flakeKey, myPhone);
 
   return NextResponse.json({ ok: true });

@@ -26,6 +26,7 @@ function localYmd(d: Date = new Date()): string {
 type Step = "phone" | "code" | "name" | "flake" | "result";
 
 interface FlakeResult {
+  type: "penciled" | "cancel";
   mutual: boolean;
   message: string;
 }
@@ -85,11 +86,20 @@ function displayMaskedSelf(
   return rawPhone.trim() || "—";
 }
 
-/** Copy for plans where the viewer is always counted in cancelledCount (see GET /api/flake). */
-function youAndMoreWantToCancel(cancelledCount: number): string {
-  if (cancelledCount <= 1) return "You want to cancel";
-  const more = cancelledCount - 1;
-  return `You and ${more} more want to cancel`;
+function meetingStatusText(item: MyCancellationItem, selfCancelled: boolean): string {
+  if (item.mutual) return "Everyone wanted out — you\u2019re covered";
+  if (item.cancelledCount === 0) return "Meeting penciled in";
+  if (selfCancelled) {
+    if (item.cancelledCount <= 1) return "You want to cancel";
+    return `You and ${item.cancelledCount - 1} more want to cancel`;
+  }
+  return `${item.cancelledCount} of ${item.totalPeople} want to cancel`;
+}
+
+function pieAriaLabel(item: MyCancellationItem): string {
+  if (item.mutual) return "Cancelled — everyone wanted out";
+  if (item.cancelledCount === 0) return "No one wants to cancel yet";
+  return `${item.cancelledCount} of ${item.totalPeople} want to cancel`;
 }
 
 const PIE_MEETING_GREY = "#3d3d3d";
@@ -190,7 +200,7 @@ function CancelProgressPie({
       className="shrink-0 rounded-full border border-[#c9c4bc] shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] h-[calc(2.75rem*2/3)] w-[calc(2.75rem*2/3)]"
       style={{ background }}
       role="img"
-      aria-label={youAndMoreWantToCancel(cancelledCount)}
+      aria-label={pieAriaLabel({ date: "", cancelledCount, totalPeople, mutual: totalPeople > 0 && cancelledCount >= totalPeople })}
     />
   );
 }
@@ -461,7 +471,7 @@ export default function Home() {
     }
   };
 
-  const handleFlake = async () => {
+  const handlePencilIn = async () => {
     setError("");
     if (!targetPhones.some((t) => t.trim())) return;
     const self = normalizePhone(phone, phoneRegion);
@@ -494,7 +504,7 @@ export default function Home() {
         if (res.status === 401) signOut();
         throw new Error(data.error || "Something went wrong");
       }
-      setResult(data);
+      setResult({ type: "penciled", mutual: false, message: "" });
       setStep("result");
       if (token) void refreshCancellations(token);
     } catch (e: unknown) {
@@ -517,7 +527,42 @@ export default function Home() {
     return `${item.date}:${(item.participants ?? []).join("|")}`;
   }
 
-  const handleUndoFlake = async (item: MyCancellationItem) => {
+  const handleOptToCancel = async (item: MyCancellationItem) => {
+    const participants = item.participants ?? [];
+    if (!token || participants.length < 2) return;
+    const rowKey = myCancellationRowKey(item);
+    setUndoingFlakeKey(rowKey);
+    setError("");
+    try {
+      const res = await fetch("/api/flake", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ date: item.date, participants }),
+      });
+      const data: { mutual?: boolean; message?: string; error?: string } =
+        await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 401) signOut();
+        throw new Error(
+          typeof data.error === "string" ? data.error : "Could not update"
+        );
+      }
+      const mutual = !!data.mutual;
+      const message = typeof data.message === "string" ? data.message : "";
+      setResult({ type: "cancel", mutual, message });
+      setStep("result");
+      if (token) void refreshCancellations(token);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setUndoingFlakeKey(null);
+    }
+  };
+
+  const handleUndoCancel = async (item: MyCancellationItem) => {
     const participants = item.participants ?? [];
     if (!token || participants.length < 2) return;
     const rowKey = myCancellationRowKey(item);
@@ -544,9 +589,7 @@ export default function Home() {
           typeof data.error === "string" ? data.error : "Could not update"
         );
       }
-      setMyCancellations((prev) =>
-        prev.filter((x) => myCancellationRowKey(x) !== rowKey)
-      );
+      if (token) void refreshCancellations(token);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Something went wrong");
     } finally {
@@ -974,7 +1017,7 @@ export default function Home() {
                 />
               </label>
               <button
-                onClick={handleFlake}
+                onClick={handlePencilIn}
                 disabled={
                   loading ||
                   !date ||
@@ -982,88 +1025,24 @@ export default function Home() {
                 }
                 className="w-full py-3 bg-[#e07a5f] text-white rounded-xl font-medium hover:bg-[#d06a4f] active:bg-[#c05a3f] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {loading ? "..." : "I want to cancel"}
+                {loading ? "..." : "Pencil in"}
               </button>
             </div>
           ) : step === "result" && result ? (
             <div className="text-center space-y-4 py-4">
-              {profileEditOpen ? (
-                <div className="text-left space-y-3 rounded-xl border border-[#eee] bg-[#fafaf9] p-3 mb-2">
-                  <p className="text-xs font-medium text-[#5a5a5a]">
-                    Your name / number
-                  </p>
-                  <label className="block" htmlFor="flaky-profile-name-result">
-                    <span className="text-xs text-[#8a8a8a]">Name</span>
-                    <input
-                      id="flaky-profile-name-result"
-                      name="name"
-                      type="text"
-                      autoComplete="name"
-                      value={profileDraft}
-                      onChange={(e) => setProfileDraft(e.target.value)}
-                      className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-base text-[#3d3d3d] bg-transparent"
-                    />
-                  </label>
-                  <p className="text-xs text-[#8a8a8a] leading-relaxed">
-                    Number:{" "}
-                    <span className="text-[#6a6a6a]">
-                      {displayMaskedSelf(phone, phoneRegion)}
-                    </span>
-                    {" · "}
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={signOut}
-                      className="text-[#8a8a8a] underline decoration-[#ccc] underline-offset-2 hover:text-[#5a5a5a] disabled:opacity-50"
-                    >
-                      Use a different number
-                    </button>
-                  </p>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={() => void saveProfileFromHeader()}
-                      className="flex-1 py-2.5 bg-[#e07a5f] text-white rounded-xl text-sm font-medium hover:bg-[#d06a4f] disabled:opacity-50"
-                    >
-                      {loading ? "..." : "Save"}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={() => {
-                        setProfileEditOpen(false);
-                        setProfileDraft(profileName);
-                      }}
-                      className="flex-1 py-2.5 border border-[#ddd] text-[#5a5a5a] rounded-xl text-sm font-medium hover:bg-white disabled:opacity-50"
-                    >
-                      Cancel
-                    </button>
+              {result.type === "penciled" ? (
+                <>
+                  <div className="text-5xl" aria-hidden="true">
+                    📝
                   </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setProfileDraft(profileName);
-                    setProfileEditOpen(true);
-                    setError("");
-                  }}
-                  className="group mb-2 w-full max-w-full min-w-0 rounded-lg px-1 py-1.5 text-center text-xs leading-relaxed text-[#8a8a8a] transition-colors hover:bg-[#faf8f5] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#e07a5f]/40"
-                >
-                  <span className="text-[#8a8a8a]">Signed in as </span>
-                  <span className="whitespace-normal break-words font-medium text-[#6a6a6a] underline decoration-[#ccc] underline-offset-2 transition-colors group-hover:text-[#e07a5f] group-hover:decoration-[#e07a5f]">
-                    {profileName ? (
-                      <>
-                        {profileName}
-                        <span className="font-normal text-[#a3a3a3] group-hover:text-[#e07a5f]/70"> · </span>
-                      </>
-                    ) : null}
-                    {displayMaskedSelf(phone, phoneRegion)}
-                  </span>
-                </button>
-              )}
-              {result.mutual ? (
+                  <h2 className="text-xl font-bold text-[#3d3d3d]">
+                    Penciled in!
+                  </h2>
+                  <p className="text-[#6a6a6a] leading-relaxed">
+                    They&apos;ll get a text about it. If anyone secretly wants out, they can tap the X.
+                  </p>
+                </>
+              ) : result.mutual ? (
                 <>
                   <div className="text-5xl" aria-hidden="true">
                     🛋️
@@ -1084,7 +1063,7 @@ export default function Home() {
                     Secret&apos;s safe
                   </h2>
                   <p className="text-[#6a6a6a] leading-relaxed">
-                    If they feel the same way, we&apos;ll let you know.
+                    If everyone wants out, you&apos;ll all be off the hook.
                   </p>
                 </>
               )}
@@ -1092,7 +1071,7 @@ export default function Home() {
                 onClick={resetFlake}
                 className="w-full py-3 bg-[#81b29a] text-white rounded-xl font-medium hover:bg-[#71a28a] active:bg-[#619278] transition-colors"
               >
-                {result.mutual ? "Nice" : "Done"}
+                {result.type === "cancel" && result.mutual ? "Nice" : "Done"}
               </button>
             </div>
           ) : null}
@@ -1105,7 +1084,9 @@ export default function Home() {
           <ul className="space-y-7">
             {myCancellations.map((item) => {
               const rowKey = myCancellationRowKey(item);
-              const undoBusy = undoingFlakeKey === rowKey;
+              const busy = undoingFlakeKey === rowKey;
+              const selfE164 = normalizePhone(phone, phoneRegion);
+              const selfCancelled = !!selfE164 && (item.flakedParticipants ?? []).includes(selfE164);
               return (
                 <li
                   key={rowKey}
@@ -1116,7 +1097,7 @@ export default function Home() {
                     flakedParticipants={item.flakedParticipants}
                     cancelledCount={item.cancelledCount}
                     totalPeople={item.totalPeople}
-                    selfE164={normalizePhone(phone, phoneRegion)}
+                    selfE164={selfE164}
                   />
                   <div className="min-w-0 flex-1 pt-0.5">
                     <p className="text-sm font-medium text-[#3d3d3d]">
@@ -1125,18 +1106,17 @@ export default function Home() {
                     <p className="text-xs text-[#8a8a8a] mt-0.5 leading-relaxed">
                       {item.mutual ? (
                         <span className="text-[#5a7d6c]">
-                          Everyone wanted out — you&apos;re covered
+                          {meetingStatusText(item, selfCancelled)}
                         </span>
                       ) : (
-                        <>{youAndMoreWantToCancel(item.cancelledCount)}</>
+                        <>{meetingStatusText(item, selfCancelled)}</>
                       )}
                     </p>
                     <p className="text-xs text-[#6a6a6a] mt-1.5 leading-relaxed">
                       {[...(item.participants ?? [])]
                         .sort((a, b) => {
-                        const self = normalizePhone(phone, phoneRegion);
-                        const ay = self && a === self ? 0 : 1;
-                        const by = self && b === self ? 0 : 1;
+                        const ay = selfE164 && a === selfE164 ? 0 : 1;
+                        const by = selfE164 && b === selfE164 ? 0 : 1;
                         return ay - by || a.localeCompare(b);
                       })
                       .map((p) =>
@@ -1150,27 +1130,51 @@ export default function Home() {
                         .join(" · ")}
                     </p>
                   </div>
-                  {!item.mutual && (
-                  <button
-                    type="button"
-                    disabled={loading || undoBusy}
-                    onClick={() => void handleUndoFlake(item)}
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#e8b5a8] text-[#d06a4f] hover:border-[#e07a5f] hover:bg-[#fef6f4] hover:text-[#c05a3f] active:bg-[#fde8e2] disabled:opacity-50 disabled:cursor-not-allowed transition-colors mt-0.5"
-                    aria-label="Take back — I do not want to cancel anymore"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                      strokeLinecap="round"
-                      className="h-3.5 w-3.5"
-                      aria-hidden
+                  {!item.mutual && !selfCancelled && (
+                    <button
+                      type="button"
+                      disabled={loading || busy}
+                      onClick={() => void handleOptToCancel(item)}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#e8b5a8] text-[#d06a4f] hover:border-[#e07a5f] hover:bg-[#fef6f4] hover:text-[#c05a3f] active:bg-[#fde8e2] disabled:opacity-50 disabled:cursor-not-allowed transition-colors mt-0.5"
+                      aria-label="I secretly want to cancel this"
                     >
-                      <path d="M6 6l12 12M18 6L6 18" />
-                    </svg>
-                  </button>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                        strokeLinecap="round"
+                        className="h-3.5 w-3.5"
+                        aria-hidden
+                      >
+                        <path d="M6 6l12 12M18 6L6 18" />
+                      </svg>
+                    </button>
+                  )}
+                  {!item.mutual && selfCancelled && (
+                    <button
+                      type="button"
+                      disabled={loading || busy}
+                      onClick={() => void handleUndoCancel(item)}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#b8d4c4] text-[#5a7d6c] hover:border-[#81b29a] hover:bg-[#f0f8f4] hover:text-[#4a6d5c] active:bg-[#e0f0e8] disabled:opacity-50 disabled:cursor-not-allowed transition-colors mt-0.5"
+                      aria-label="Take back — I don't want to cancel anymore"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="h-3.5 w-3.5"
+                        aria-hidden
+                      >
+                        <path d="M9 14l-4-4 4-4" />
+                        <path d="M5 10h11a4 4 0 1 1 0 8h-1" />
+                      </svg>
+                    </button>
                   )}
                 </li>
               );
