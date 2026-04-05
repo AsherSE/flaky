@@ -6,7 +6,7 @@ import {
   resolvePhoneRegion,
 } from "@/lib/phone";
 import { getRandomMessage } from "@/lib/messages";
-import { sendSMS } from "@/lib/twilio";
+import { sendSMS, twilioSendErrorInfo } from "@/lib/twilio";
 import { profileKey } from "@/lib/profile";
 
 export const dynamic = "force-dynamic";
@@ -255,10 +255,17 @@ export async function POST(req: NextRequest) {
     targets.map(async (to) => {
       try {
         await sendSMS(to, smsBody);
-        return { to, ok: true };
+        return { to, ok: true as const };
       } catch (e) {
-        console.error("Failed to send invitation SMS to", to, ":", e);
-        return { to, ok: false, error: e instanceof Error ? e.message : String(e) };
+        const info = twilioSendErrorInfo(e);
+        console.error("Failed to send invitation SMS to", to, info);
+        return {
+          to,
+          ok: false as const,
+          code: info.code,
+          message: info.message,
+          moreInfo: info.moreInfo,
+        };
       }
     })
   );
@@ -272,6 +279,15 @@ export async function POST(req: NextRequest) {
     smsWarning: smsFailed.length > 0
       ? `Text couldn\u2019t be sent to ${smsFailed.length} number${smsFailed.length > 1 ? "s" : ""}. They can still find the meeting when they open flaky.`
       : null,
+    smsFailures:
+      smsFailed.length > 0
+        ? smsFailed.map((r) => ({
+            to: r.to,
+            code: r.code,
+            message: r.message,
+            moreInfo: r.moreInfo,
+          }))
+        : undefined,
   });
 }
 

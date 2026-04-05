@@ -26,10 +26,18 @@ function localYmd(d: Date = new Date()): string {
 
 type Step = "phone" | "code" | "name" | "flake" | "result";
 
+interface SmsFailureDetail {
+  to: string;
+  code?: number;
+  message: string;
+  moreInfo?: string;
+}
+
 interface FlakeResult {
   type: "penciled" | "cancel";
   mutual: boolean;
   message: string;
+  smsFailures?: SmsFailureDetail[];
 }
 
 interface MyCancellationItem {
@@ -512,7 +520,28 @@ export default function Home() {
         throw new Error(data.error || "Something went wrong");
       }
       const smsWarn = typeof data.smsWarning === "string" ? data.smsWarning : "";
-      setResult({ type: "penciled", mutual: false, message: smsWarn });
+      const smsFailures: SmsFailureDetail[] = [];
+      const rawFailures = data.smsFailures;
+      if (Array.isArray(rawFailures)) {
+        for (const row of rawFailures) {
+          if (!row || typeof row !== "object") continue;
+          const r = row as Record<string, unknown>;
+          const to = typeof r.to === "string" ? r.to : "";
+          if (!to) continue;
+          const message =
+            typeof r.message === "string" ? r.message : "Unknown error";
+          const code = typeof r.code === "number" ? r.code : undefined;
+          const moreInfo =
+            typeof r.moreInfo === "string" ? r.moreInfo : undefined;
+          smsFailures.push({ to, code, message, moreInfo });
+        }
+      }
+      setResult({
+        type: "penciled",
+        mutual: false,
+        message: smsWarn,
+        smsFailures: smsFailures.length > 0 ? smsFailures : undefined,
+      });
       setStep("result");
       if (token) void refreshCancellations(token);
     } catch (e: unknown) {
@@ -1051,6 +1080,41 @@ export default function Home() {
                       ? result.message
                       : "They\u2019ll get a text about it. If anyone secretly wants out, they can tap the X."}
                   </p>
+                  {result.smsFailures && result.smsFailures.length > 0 ? (
+                    <div className="rounded-lg border border-[#eee] bg-[#fafaf9] px-3 py-2 text-left text-xs text-[#6a6a6a] space-y-2">
+                      <p className="font-medium text-[#5a5a5a]">
+                        Twilio details (for troubleshooting)
+                      </p>
+                      <ul className="list-disc space-y-1.5 pl-4 font-mono break-all">
+                        {result.smsFailures.map((f) => (
+                          <li key={f.to}>
+                            <span className="text-[#3d3d3d]">{f.to}</span>
+                            {f.code != null ? (
+                              <span className="text-[#8a8a8a]">
+                                {" "}
+                                · code {f.code}
+                              </span>
+                            ) : null}
+                            <br />
+                            <span className="text-[#7a7a7a]">{f.message}</span>
+                            {f.moreInfo ? (
+                              <>
+                                <br />
+                                <a
+                                  href={f.moreInfo}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[#e07a5f] underline underline-offset-2"
+                                >
+                                  Twilio docs
+                                </a>
+                              </>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
                 </>
               ) : result.mutual ? (
                 <>
