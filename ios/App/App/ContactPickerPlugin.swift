@@ -21,6 +21,9 @@ public class ContactPickerPlugin: CAPPlugin, CAPBridgedPlugin {
             let picker = CNContactPickerViewController()
             picker.delegate = self
             picker.displayedPropertyKeys = [CNContactPhoneNumbersKey]
+            // Prefer immediate selection; avoids drilling into contact detail (esp. when browsing).
+            // Search can still misbehave on some iOS versions (ContactsUI quirk).
+            picker.predicateForSelectionOfContact = NSPredicate(value: true)
             self.bridge?.viewController?.present(picker, animated: true)
         }
     }

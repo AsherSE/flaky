@@ -14,8 +14,30 @@ export const dynamic = "force-dynamic";
 const SEVEN_DAYS = 7 * 24 * 60 * 60;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** Calendar "today" for plan dates (YYYY-MM-DD). Defaults to UTC; set FLAKY_PLAN_DATE_TZ (IANA) if needed. */
+function planCalendarTodayYmd(): string {
+  const tz = process.env.FLAKY_PLAN_DATE_TZ?.trim() || "UTC";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 function userFlakesIndexKey(phone: string) {
   return `userFlakes:${phone}`;
+}
+
+/** Remove meeting data and drop the key from every participant's index. */
+async function pruneFlakeEverywhere(
+  flakeKey: string,
+  participants: string[]
+): Promise<void> {
+  await redis.del(flakeKey);
+  await Promise.all(
+    participants.map((p) => redis.srem(userFlakesIndexKey(p), flakeKey))
+  );
 }
 
 function parseFlakeRedisKey(flakeKey: string): {
@@ -154,12 +176,18 @@ export async function GET(req: NextRequest) {
   const indexKey = userFlakesIndexKey(myPhone);
   const flakeKeys = await redis.smembers(indexKey);
   const staleKeys: string[] = [];
+  const todayYmd = planCalendarTodayYmd();
 
   const items = await Promise.all(
     flakeKeys.map(async (flakeKey) => {
       const parsed = parseFlakeRedisKey(flakeKey);
       if (!parsed) {
         staleKeys.push(flakeKey);
+        return null;
+      }
+
+      if (parsed.date < todayYmd) {
+        await pruneFlakeEverywhere(flakeKey, parsed.participants);
         return null;
       }
 
@@ -225,6 +253,12 @@ export async function POST(req: NextRequest) {
   const date = typeof o.date === "string" ? o.date.trim() : "";
   if (!DATE_RE.test(date)) {
     return NextResponse.json({ error: "Pick a valid date" }, { status: 400 });
+  }
+  if (date < planCalendarTodayYmd()) {
+    return NextResponse.json(
+      { error: "Pick today or a future date" },
+      { status: 400 }
+    );
   }
 
   const region = resolvePhoneRegion(
@@ -318,6 +352,11 @@ export async function PUT(req: NextRequest) {
   if (result instanceof NextResponse) return result;
   const { sorted, flakeKey, date } = result;
 
+  if (date < planCalendarTodayYmd()) {
+    await pruneFlakeEverywhere(flakeKey, sorted);
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   await redis.sadd(flakeKey, myPhone);
   await redis.expire(flakeKey, SEVEN_DAYS);
 
@@ -367,7 +406,12 @@ export async function DELETE(req: NextRequest) {
 
   const result = resolveParticipantsFromBody(body, myPhone, req);
   if (result instanceof NextResponse) return result;
-  const { sorted, flakeKey } = result;
+  const { sorted, flakeKey, date } = result;
+
+  if (date < planCalendarTodayYmd()) {
+    await pruneFlakeEverywhere(flakeKey, sorted);
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   const flaked = await getFlakeMembers(flakeKey);
   if (flaked.length > 0) {
