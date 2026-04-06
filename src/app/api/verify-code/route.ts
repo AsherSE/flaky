@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { normalizePhone, resolvePhoneRegion } from "@/lib/phone";
 import { checkVerification } from "@/lib/twilio";
 import { redis } from "@/lib/redis";
+import { SESSION_TTL_SEC } from "@/lib/session-ttl";
 import { rateLimit, rateLimitError } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -53,7 +54,7 @@ export async function POST(req: NextRequest) {
     }
 
     const token = crypto.randomUUID();
-    await redis.set(`session:${token}`, phone, { ex: 24 * 60 * 60 });
+    await redis.set(`session:${token}`, phone, { ex: SESSION_TTL_SEC });
 
     return NextResponse.json({ token });
   } catch (e) {

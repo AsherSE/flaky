@@ -21,8 +21,8 @@ export default function PrivacyPage() {
         </p>
         <h1 className="text-3xl font-bold tracking-tight">Privacy policy</h1>
         <p className="mt-2 text-sm text-[#8a8a8a]">
-          Last updated: March 30, 2026. flaky is operated as a personal /
-          small project (“we”, “us”).
+          Last updated: April 5, 2026. In this policy, “we” and “us” mean the
+          operator of flaky.
         </p>
 
         <section className="mt-10 space-y-4 text-[#5a5a5a] leading-relaxed">
@@ -72,8 +72,27 @@ export default function PrivacyPage() {
           <h2 className="text-lg font-semibold text-[#3d3d3d]">SMS</h2>
           <p>
             Message frequency is low and tied to your use of the app (e.g.
-            signup verification, invites, cancellations). Message and data
-            rates may apply — check with your carrier.
+            signup verification, when someone pencils you in, when everyone in a
+            plan agrees to cancel). Message and data rates may apply — check
+            with your carrier. To opt out of further SMS from flaky on your
+            number, reply <strong className="text-[#3d3d3d]">STOP</strong> to a
+            message we sent you. For help, reply{" "}
+            <strong className="text-[#3d3d3d]">HELP</strong> where supported, or
+            email{" "}
+            <a
+              href="mailto:feedback@flaky.me?subject=HELP%20-%20flaky"
+              className="font-medium text-[#e07a5f] hover:text-[#d06a4f] underline underline-offset-2"
+            >
+              feedback@flaky.me
+            </a>
+            . Program details are in our{" "}
+            <Link
+              href="/terms"
+              className="font-medium text-[#e07a5f] hover:text-[#d06a4f] underline underline-offset-2"
+            >
+              Terms &amp; conditions
+            </Link>
+            .
           </p>
         </section>
 
@@ -82,11 +101,11 @@ export default function PrivacyPage() {
             Who we share with
           </h2>
           <p>
-            We use vendors that are necessary to operate the service (for
-            example, cloud hosting, a database, and a telecommunications
-            provider to send and verify SMS). They process data on our behalf
-            under their terms and privacy policies; we do not sell personal
-            information.
+            We use vendors that are necessary to operate the service — for
+            example, cloud hosting, a database,{" "}
+            <strong className="text-[#3d3d3d]">Twilio</strong> (to send and
+            verify SMS), and related infrastructure. They process data on our
+            behalf under their terms and privacy policies.
           </p>
         </section>
 

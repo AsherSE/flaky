@@ -15,6 +15,10 @@ import {
   isCapacitorIOS,
   pickPhoneFromContacts,
 } from "@/lib/contact-picker";
+import {
+  loadContactBookNames,
+  withContactBookName,
+} from "@/lib/contact-book-names";
 
 /** Calendar date in local timezone (YYYY-MM-DD). Avoids UTC vs local mismatch from toISOString(). */
 function localYmd(d: Date = new Date()): string {
@@ -71,18 +75,24 @@ function maskParticipantPhone(participantE164: string): string {
   return participantE164;
 }
 
-/** Compare to session phone (any format) vs stored E.164. Names from profiles (others who verified and set a name). */
+/**
+ * Compare to session phone (any format). Labels: verified profile name, then
+ * address-book name (on-device), else masked E.164.
+ */
 function formatParticipantForList(
   rawSelf: string,
   participantE164: string,
   profileNames?: Record<string, string>,
-  defaultCountry: CountryCode = "US"
+  defaultCountry: CountryCode = "US",
+  contactBookNames?: Record<string, string>
 ) {
   const self = normalizePhone(rawSelf, defaultCountry);
   if (self && self === participantE164) return "With";
   const masked = maskParticipantPhone(participantE164);
   const saved = profileNames?.[participantE164]?.trim();
   if (saved) return `${saved} · ${masked}`;
+  const book = contactBookNames?.[participantE164]?.trim();
+  if (book) return `${book} · ${masked}`;
   return masked;
 }
 
@@ -225,6 +235,9 @@ export default function Home() {
   const [targetPhones, setTargetPhones] = useState<string[]>([""]);
   const [date, setDate] = useState(() => localYmd());
   const [profileNames, setProfileNames] = useState<Record<string, string>>({});
+  const [contactBookNames, setContactBookNames] = useState<
+    Record<string, string>
+  >({});
   const [profileName, setProfileName] = useState("");
   const [onboardingName, setOnboardingName] = useState("");
   const [profileEditOpen, setProfileEditOpen] = useState(false);
@@ -245,6 +258,7 @@ export default function Home() {
   useEffect(() => {
     setPhoneRegion(inferPhoneRegionFromNavigator());
     setCapacitorIos(isCapacitorIOS());
+    setContactBookNames(loadContactBookNames());
   }, []);
 
   useEffect(() => {
@@ -963,28 +977,43 @@ export default function Home() {
                           : "Their number"}
                       </span>
                       <div className="flex items-end">
-                        <input
-                          id={`flaky-their-phone-${index}`}
-                          name={
-                            index === 0
-                              ? "recipient-tel"
-                              : `recipient-tel-${index}`
-                          }
-                          type="tel"
-                          autoComplete="section-other tel"
-                          inputMode="tel"
-                          value={targetPhone}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setTargetPhones((prev) => {
-                              const next = [...prev];
-                              next[index] = v;
-                              return next;
-                            });
-                          }}
-                          placeholder="Their mobile number"
-                          className="mt-1 block w-full min-w-0 px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
-                        />
+                        <div className="min-w-0 flex-1">
+                          <input
+                            id={`flaky-their-phone-${index}`}
+                            name={
+                              index === 0
+                                ? "recipient-tel"
+                                : `recipient-tel-${index}`
+                            }
+                            type="tel"
+                            autoComplete="section-other tel"
+                            inputMode="tel"
+                            value={targetPhone}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setTargetPhones((prev) => {
+                                const next = [...prev];
+                                next[index] = v;
+                                return next;
+                              });
+                            }}
+                            placeholder="Their mobile number"
+                            className="mt-1 block w-full min-w-0 px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
+                          />
+                          {(() => {
+                            const rowE164 = normalizePhone(
+                              targetPhone,
+                              phoneRegion
+                            );
+                            const book =
+                              rowE164 && contactBookNames[rowE164]?.trim();
+                            return book ? (
+                              <span className="mt-0.5 block text-xs text-[#8a8a8a]">
+                                {book}
+                              </span>
+                            ) : null;
+                          })()}
+                        </div>
                         {capacitorIos && (
                           <button
                             type="button"
@@ -994,9 +1023,22 @@ export default function Home() {
                               if (picked) {
                                 setTargetPhones((prev) => {
                                   const next = [...prev];
-                                  next[index] = picked;
+                                  next[index] = picked.phone;
                                   return next;
                                 });
+                                const e164 = normalizePhone(
+                                  picked.phone,
+                                  phoneRegion
+                                );
+                                if (e164) {
+                                  setContactBookNames((prev) =>
+                                    withContactBookName(
+                                      e164,
+                                      picked.displayName,
+                                      prev
+                                    )
+                                  );
+                                }
                               }
                             }}
                             className="shrink-0 ml-2 mb-1 flex h-8 w-8 items-center justify-center rounded-full text-[#8a8a8a] hover:bg-[#f0ece6] hover:text-[#5a5a5a] active:bg-[#e8e4dd] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -1078,7 +1120,7 @@ export default function Home() {
                   <p className="text-[#6a6a6a] leading-relaxed">
                     {result.message
                       ? result.message
-                      : "They\u2019ll get a text about it. If anyone secretly wants out, they can tap the X."}
+                      : "They\u2019ll get a text about it. If anyone secretly wants out, they can tap flake."}
                   </p>
                   {result.smsFailures && result.smsFailures.length > 0 ? (
                     <div className="rounded-lg border border-[#eee] bg-[#fafaf9] px-3 py-2 text-left text-xs text-[#6a6a6a] space-y-2">
@@ -1164,7 +1206,7 @@ export default function Home() {
               return (
                 <li
                   key={rowKey}
-                  className="flex items-start gap-3"
+                  className="flex items-center gap-3"
                 >
                   <CancelProgressPie
                     participants={item.participants}
@@ -1173,7 +1215,7 @@ export default function Home() {
                     totalPeople={item.totalPeople}
                     selfE164={selfE164}
                   />
-                  <div className="min-w-0 flex-1 pt-0.5">
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-[#3d3d3d]">
                       {formatPlanDate(item.date)}
                     </p>
@@ -1198,7 +1240,8 @@ export default function Home() {
                           phone,
                           p,
                           profileNames,
-                          phoneRegion
+                          phoneRegion,
+                          contactBookNames
                         )
                       )
                         .join(" · ")}
@@ -1209,21 +1252,10 @@ export default function Home() {
                       type="button"
                       disabled={loading || busy}
                       onClick={() => void handleOptToCancel(item)}
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#e8b5a8] text-[#d06a4f] hover:border-[#e07a5f] hover:bg-[#fef6f4] hover:text-[#c05a3f] active:bg-[#fde8e2] disabled:opacity-50 disabled:cursor-not-allowed transition-colors mt-0.5"
-                      aria-label="I secretly want to cancel this"
+                      className="shrink-0 px-3 py-1.5 min-w-[4.25rem] rounded-full border border-[#e8b5a8] text-xs font-semibold tracking-tight text-[#d06a4f] hover:border-[#e07a5f] hover:bg-[#fef6f4] hover:text-[#c05a3f] active:bg-[#fde8e2] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      aria-label="Flake — secretly want to cancel this plan"
                     >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        strokeLinecap="round"
-                        className="h-3.5 w-3.5"
-                        aria-hidden
-                      >
-                        <path d="M6 6l12 12M18 6L6 18" />
-                      </svg>
+                      flake
                     </button>
                   )}
                   {!item.mutual && selfCancelled && (
@@ -1231,23 +1263,10 @@ export default function Home() {
                       type="button"
                       disabled={loading || busy}
                       onClick={() => void handleUndoCancel(item)}
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#b8d4c4] text-[#5a7d6c] hover:border-[#81b29a] hover:bg-[#f0f8f4] hover:text-[#4a6d5c] active:bg-[#e0f0e8] disabled:opacity-50 disabled:cursor-not-allowed transition-colors mt-0.5"
-                      aria-label="Take back — I don't want to cancel anymore"
+                      className="shrink-0 px-3 py-1.5 min-w-[4.25rem] rounded-full border border-[#b8d4c4] text-xs font-semibold tracking-tight text-[#5a7d6c] hover:border-[#81b29a] hover:bg-[#f0f8f4] hover:text-[#4a6d5c] active:bg-[#e0f0e8] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      aria-label="Recommit — take back cancel for this plan"
                     >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="h-3.5 w-3.5"
-                        aria-hidden
-                      >
-                        <path d="M9 14l-4-4 4-4" />
-                        <path d="M5 10h11a4 4 0 1 1 0 8h-1" />
-                      </svg>
+                      recommit
                     </button>
                   )}
                 </li>

@@ -23,7 +23,7 @@ export default function TermsPage() {
           Terms &amp; conditions
         </h1>
         <p className="mt-2 text-sm text-[#8a8a8a]">
-          Last updated: March 30, 2026.
+          Last updated: April 5, 2026.
         </p>
 
         <section className="mt-10 space-y-4 text-[#5a5a5a] leading-relaxed">
@@ -78,30 +78,30 @@ export default function TermsPage() {
               undelivered messages.
             </li>
             <li>
-              <strong className="text-[#3d3d3d]">Help:</strong> Email{" "}
+              <strong className="text-[#3d3d3d]">Help:</strong> Reply{" "}
+              <strong>HELP</strong> to an SMS from us for help where your
+              carrier and our SMS provider support keyword replies, or email{" "}
               <a
                 href="mailto:feedback@flaky.me?subject=HELP%20-%20flaky"
                 className="font-medium text-[#e07a5f] hover:text-[#d06a4f] underline underline-offset-2"
               >
                 feedback@flaky.me
-              </a>{" "}
-              with the subject line HELP or describe your question in the body.
+              </a>
+              .
             </li>
             <li>
-              <strong className="text-[#3d3d3d]">Opt-out:</strong> flaky sends{" "}
-              <strong>transactional</strong> messages tied to verification and
-              meetings. To stop receiving those after you have used the service,
-              contact{" "}
+              <strong className="text-[#3d3d3d]">Opt-out:</strong> To stop
+              receiving SMS from flaky on your phone, reply{" "}
+              <strong>STOP</strong> to a message we sent you. After you opt out,
+              we will not send further SMS to that number unless you start the
+              flow again (e.g. new verification). You can also email{" "}
               <a
                 href="mailto:feedback@flaky.me?subject=STOP%20-%20flaky%20SMS"
                 className="font-medium text-[#e07a5f] hover:text-[#d06a4f] underline underline-offset-2"
               >
                 feedback@flaky.me
               </a>{" "}
-              and ask to remove your number / account. Reply keyword{" "}
-              <strong>STOP</strong> may not disable all message types until we
-              add full long-code keyword handling; email is the supported
-              opt-out path for now.
+              to request removal of your number or account data.
             </li>
           </ul>
         </section>

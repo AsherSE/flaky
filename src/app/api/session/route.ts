@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
 import { profileKey } from "@/lib/profile";
+import { SESSION_TTL_SEC } from "@/lib/session-ttl";
 
 export const dynamic = "force-dynamic";
-
-const SESSION_TTL_SEC = 24 * 60 * 60;
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization");

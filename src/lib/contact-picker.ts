@@ -1,19 +1,29 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
 
+export interface ContactPickResult {
+  phone: string;
+  displayName: string;
+}
+
 interface ContactPickerPlugin {
-  pickPhone(): Promise<{ phone: string }>;
+  pickPhone(): Promise<{ phone: string; displayName: string }>;
 }
 
 const ContactPicker = registerPlugin<ContactPickerPlugin>("ContactPicker");
 
 /**
- * Opens the native iOS contact picker and returns the selected phone number.
- * Returns null when running in a plain browser (non-Capacitor) or if the user cancels.
+ * Opens the native contact picker (contact-first). Single phone is returned
+ * immediately; multiple numbers show a native chooser.
+ * Returns null when not native, on cancel, or when no usable number.
  */
-export async function pickPhoneFromContacts(): Promise<string | null> {
+export async function pickPhoneFromContacts(): Promise<ContactPickResult | null> {
   try {
     const result = await ContactPicker.pickPhone();
-    return result.phone || null;
+    const phone = typeof result.phone === "string" ? result.phone.trim() : "";
+    const displayName =
+      typeof result.displayName === "string" ? result.displayName.trim() : "";
+    if (!phone) return null;
+    return { phone, displayName };
   } catch {
     return null;
   }
