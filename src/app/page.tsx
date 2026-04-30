@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   analyzeFlakeTargetInput,
@@ -756,6 +757,26 @@ export default function Home() {
               >
                 {loading ? "Sending..." : "Send code"}
               </button>
+              <p className="text-xs text-[#a3a3a3] text-center leading-snug">
+                By tapping Send code, you agree to receive SMS from flaky for
+                verification and plan notifications. Msg frequency varies. Msg
+                &amp; data rates may apply. Reply STOP to opt out, HELP for
+                help. See our{" "}
+                <Link
+                  href="/terms"
+                  className="underline decoration-[#ccc] underline-offset-2 hover:text-[#5a5a5a]"
+                >
+                  Terms
+                </Link>{" "}
+                and{" "}
+                <Link
+                  href="/privacy"
+                  className="underline decoration-[#ccc] underline-offset-2 hover:text-[#5a5a5a]"
+                >
+                  Privacy Policy
+                </Link>
+                .
+              </p>
             </form>
           ) : step === "code" ? (
             <div className="space-y-4">
@@ -1106,6 +1127,11 @@ export default function Home() {
               >
                 {loading ? "..." : "Pencil in"}
               </button>
+              <p className="text-xs text-[#a3a3a3] text-center leading-snug">
+                By tapping Pencil in, you confirm you have permission to text
+                this person about plans you have together. They&apos;ll get one
+                SMS and can reply STOP to opt out.
+              </p>
             </div>
           ) : step === "result" && result ? (
             <div className="text-center space-y-4 py-4">
