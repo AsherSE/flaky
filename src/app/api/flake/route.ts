@@ -284,7 +284,7 @@ export async function POST(req: NextRequest) {
 
   const creatorName = await redis.get<string>(profileKey(myPhone));
   const who = creatorName || "Someone";
-  const smsBody = `${who} penciled you in for plans on ${date}! Open flaky to see your plans: https://flaky.me\n\n— flaky`;
+  const smsBody = `flaky: ${who} penciled you in for plans on ${date}. See plans: https://flaky.me\n\nReply STOP to opt out, HELP for help. Msg & data rates may apply.`;
   const smsResults = await Promise.all(
     targets.map(async (to) => {
       try {
@@ -365,7 +365,7 @@ export async function PUT(req: NextRequest) {
 
   if (isMutual) {
     const message = getRandomMessage();
-    const smsBody = `${message}\n\nYour plans for ${date} just got cancelled — and honestly, everyone wanted out. Guilt-free.\n\n— flaky`;
+    const smsBody = `flaky: ${message}\n\nYour plans for ${date} just got cancelled — and honestly, everyone wanted out. Guilt-free.\n\nReply STOP to opt out, HELP for help.`;
     await Promise.all(
       sorted.map(async (to) => {
         try {
