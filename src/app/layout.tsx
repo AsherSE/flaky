@@ -19,6 +19,7 @@ function absoluteSiteUrl(): URL {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
   themeColor: "#e07a5f",
 };
 

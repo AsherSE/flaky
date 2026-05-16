@@ -868,12 +868,12 @@ export default function Home() {
     !!token && (step === "flake" || step === "result") && myCancellations.length > 0;
 
   return (
-    <main className="h-[100vh] h-[100dvh] max-h-[100vh] max-h-[100dvh] overflow-y-auto overscroll-none bg-gradient-to-b from-[#faf8f5] to-[#f0ece6]">
+    <main className="min-h-[100dvh] bg-gradient-to-b from-[#faf8f5] to-[#f0ece6]">
       <div
         className={
           capacitorIos
-            ? "flex min-h-full items-start justify-center px-4 pb-4 pt-[calc(env(safe-area-inset-top,0px)+4rem)]"
-            : "flex min-h-full items-start justify-center px-4 pb-4 pt-14"
+            ? "flex min-h-[100dvh] items-start justify-center px-4 pt-[calc(env(safe-area-inset-top,0px)+4rem)] pb-[max(1rem,env(safe-area-inset-bottom,0px))]"
+            : "flex min-h-[100dvh] items-start justify-center px-4 pt-14 pb-4"
         }
       >
         <div className="w-full min-w-0 max-w-sm">
