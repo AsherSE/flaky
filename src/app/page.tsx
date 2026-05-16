@@ -901,6 +901,39 @@ export default function Home() {
           </div>
         ) : null}
 
+        {(step === "flake" || step === "result") && !profileEditOpen ? (
+          <div className="mb-6 text-center">
+            <Image
+              src="/logo.png"
+              alt="flaky"
+              width={650}
+              height={662}
+              priority
+              className="mx-auto h-12 w-auto"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setProfileDraft(profileName);
+                setProfileEditOpen(true);
+                setError("");
+              }}
+              className="group mt-2 inline-flex max-w-full items-center rounded-lg px-2 py-1 text-xs leading-relaxed text-[#8a8a8a] transition-colors hover:bg-[#faf8f5] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#e07a5f]/40"
+            >
+              <span className="text-[#8a8a8a]">Signed in as&nbsp;</span>
+              <span className="whitespace-normal break-words font-medium text-[#6a6a6a] underline decoration-[#ccc] underline-offset-2 transition-colors group-hover:text-[#e07a5f] group-hover:decoration-[#e07a5f]">
+                {profileName ? (
+                  <>
+                    {profileName}
+                    <span className="font-normal text-[#a3a3a3] group-hover:text-[#e07a5f]/70"> · </span>
+                  </>
+                ) : null}
+                {displayMaskedSelf(phone, phoneRegion)}
+              </span>
+            </button>
+          </div>
+        ) : null}
+
         <div className="bg-white rounded-2xl shadow-sm border border-[#eee] p-6">
           {error && (
             <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg">
@@ -1104,38 +1137,6 @@ export default function Home() {
             </form>
           ) : step === "flake" ? (
             <div className="space-y-4">
-              {!profileEditOpen ? (
-                <div className="flex items-center gap-2">
-                  <Image
-                    src="/logo.png"
-                    alt="flaky"
-                    width={650}
-                    height={662}
-                    priority
-                    className="h-7 w-auto shrink-0"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setProfileDraft(profileName);
-                      setProfileEditOpen(true);
-                      setError("");
-                    }}
-                    className="group min-w-0 flex-1 rounded-lg px-1 py-1.5 text-left text-xs leading-relaxed text-[#8a8a8a] transition-colors hover:bg-[#faf8f5] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#e07a5f]/40"
-                  >
-                    <span className="text-[#8a8a8a]">Signed in as </span>
-                    <span className="whitespace-normal break-words font-medium text-[#6a6a6a] underline decoration-[#ccc] underline-offset-2 transition-colors group-hover:text-[#e07a5f] group-hover:decoration-[#e07a5f]">
-                      {profileName ? (
-                        <>
-                          {profileName}
-                          <span className="font-normal text-[#a3a3a3] group-hover:text-[#e07a5f]/70"> · </span>
-                        </>
-                      ) : null}
-                      {displayMaskedSelf(phone, phoneRegion)}
-                    </span>
-                  </button>
-                </div>
-              ) : null}
               {profileEditOpen ? (
                 <div className="space-y-3 rounded-xl border border-[#eee] bg-[#fafaf9] p-3">
                   <p className="text-xs font-medium text-[#5a5a5a]">
