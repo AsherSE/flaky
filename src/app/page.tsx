@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   analyzeFlakeTargetInput,
   normalizePhone,
@@ -229,6 +229,192 @@ const TOKEN_KEY = "flaky-token";
 /** Remember “skip for now” so we don’t block returning users who chose not to set a name. */
 const SKIP_NAME_KEY = "flaky-skip-name";
 
+const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"] as const;
+
+function CalendarPanel({
+  events,
+  selectedYmd,
+  setSelectedYmd,
+  capacitorIos,
+}: {
+  events: MyCancellationItem[];
+  selectedYmd: string | null;
+  setSelectedYmd: (ymd: string | null) => void;
+  capacitorIos: boolean;
+}) {
+  const todayYmd = localYmd();
+
+  const eventsByDate = useMemo(() => {
+    const map = new Map<string, MyCancellationItem[]>();
+    for (const e of events) {
+      const list = map.get(e.date);
+      if (list) list.push(e);
+      else map.set(e.date, [e]);
+    }
+    return map;
+  }, [events]);
+
+  const sortedDates = useMemo(
+    () => events.map((e) => e.date).sort(),
+    [events]
+  );
+  const firstEventYmd = sortedDates[0] ?? todayYmd;
+  const lastEventYmd = sortedDates[sortedDates.length - 1] ?? todayYmd;
+
+  // Default to the month containing the next upcoming event (or today's month).
+  const initialAnchor = useMemo(() => {
+    const upcoming = sortedDates.find((d) => d >= todayYmd) ?? firstEventYmd;
+    const [y, m] = upcoming.split("-").map(Number);
+    return { y: y || new Date().getFullYear(), m: (m || 1) - 1 };
+  }, [sortedDates, firstEventYmd, todayYmd]);
+
+  const [view, setView] = useState(initialAnchor);
+
+  const minBound = (() => {
+    const [y, m] = firstEventYmd.split("-").map(Number);
+    return { y: y!, m: m! - 1 };
+  })();
+  const maxBound = (() => {
+    const [y, m] = lastEventYmd.split("-").map(Number);
+    return { y: y!, m: m! - 1 };
+  })();
+  const viewKey = view.y * 12 + view.m;
+  const canPrev = viewKey > minBound.y * 12 + minBound.m;
+  const canNext = viewKey < maxBound.y * 12 + maxBound.m;
+
+  const goPrev = () => {
+    if (!canPrev) return;
+    setView((v) => (v.m === 0 ? { y: v.y - 1, m: 11 } : { y: v.y, m: v.m - 1 }));
+    setSelectedYmd(null);
+  };
+  const goNext = () => {
+    if (!canNext) return;
+    setView((v) => (v.m === 11 ? { y: v.y + 1, m: 0 } : { y: v.y, m: v.m + 1 }));
+    setSelectedYmd(null);
+  };
+
+  const monthLabel = new Date(view.y, view.m, 1).toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
+
+  // Build a 6×7 grid of YMDs starting on Sunday.
+  const cells = useMemo(() => {
+    const first = new Date(view.y, view.m, 1);
+    const startWeekday = first.getDay();
+    const out: Array<{ ymd: string; day: number; inMonth: boolean }> = [];
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(view.y, view.m, i - startWeekday + 1);
+      out.push({
+        ymd: localYmd(d),
+        day: d.getDate(),
+        inMonth: d.getMonth() === view.m,
+      });
+    }
+    return out;
+  }, [view]);
+
+  const selectedEvents = selectedYmd
+    ? eventsByDate.get(selectedYmd) ?? []
+    : [];
+
+  return (
+    <section
+      aria-label="Your meetings calendar"
+      className={
+        "flex flex-col" +
+        (capacitorIos ? " pb-[env(safe-area-inset-bottom,0px)]" : "")
+      }
+    >
+      <div className="flex w-full flex-col">
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={goPrev}
+            disabled={!canPrev}
+            aria-label="Previous month"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-[#6a6a6a] hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            <svg viewBox="0 0 12 12" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M7.5 2.5L4 6l3.5 3.5" />
+            </svg>
+          </button>
+          <p className="text-sm font-semibold text-[#3d3d3d] tracking-tight">
+            {monthLabel}
+          </p>
+          <button
+            type="button"
+            onClick={goNext}
+            disabled={!canNext}
+            aria-label="Next month"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-[#6a6a6a] hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            <svg viewBox="0 0 12 12" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M4.5 2.5L8 6l-3.5 3.5" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="mt-2 grid grid-cols-7 gap-1 shrink-0 text-center text-[10px] font-medium uppercase tracking-wide text-[#a3a3a3]">
+          {WEEKDAY_LABELS.map((w, i) => (
+            <div key={i}>{w}</div>
+          ))}
+        </div>
+
+        <div className="mt-1 grid grid-cols-7 gap-1 shrink-0">
+          {cells.map((cell) => {
+            const has = eventsByDate.has(cell.ymd);
+            const isToday = cell.ymd === todayYmd;
+            const isSelected = cell.ymd === selectedYmd;
+            const cancellable = has && cell.inMonth;
+            return (
+              <button
+                key={cell.ymd + (cell.inMonth ? "" : "-out")}
+                type="button"
+                onClick={() => {
+                  if (!cancellable) return;
+                  setSelectedYmd(selectedYmd === cell.ymd ? null : cell.ymd);
+                }}
+                disabled={!cancellable}
+                aria-pressed={isSelected}
+                aria-label={
+                  cancellable
+                    ? `${formatPlanDate(cell.ymd)} — ${eventsByDate.get(cell.ymd)!.length} meeting${eventsByDate.get(cell.ymd)!.length === 1 ? "" : "s"}`
+                    : formatPlanDate(cell.ymd)
+                }
+                className={
+                  "relative h-9 flex flex-col items-center justify-center rounded-lg text-sm transition-colors " +
+                  (isSelected
+                    ? "bg-[#e07a5f] text-white font-semibold"
+                    : cancellable
+                      ? "bg-white text-[#3d3d3d] hover:bg-[#fef6f4] active:bg-[#fde8e2]"
+                      : cell.inMonth
+                        ? "text-[#bfbab2]"
+                        : "text-[#dcd6cc]") +
+                  (isToday && !isSelected
+                    ? " ring-1 ring-inset ring-[#e07a5f]/40"
+                    : "")
+                }
+              >
+                <span>{cell.day}</span>
+                {has ? (
+                  <span
+                    className={
+                      "absolute bottom-1 h-1 w-1 rounded-full " +
+                      (isSelected ? "bg-white" : "bg-[#e07a5f]")
+                    }
+                    aria-hidden
+                  />
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function Home() {
   const [step, setStep] = useState<Step>("phone");
   const [phone, setPhone] = useState("");
@@ -255,6 +441,10 @@ export default function Home() {
   const [phoneRegion, setPhoneRegion] = useState<CountryCode>("US");
   const [capacitorIos, setCapacitorIos] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [selectedCalendarYmd, setSelectedCalendarYmd] = useState<string | null>(null);
+  const [pencilInExpanded, setPencilInExpanded] = useState(false);
+  const [cancellationsFetched, setCancellationsFetched] = useState(false);
+  const initialExpansionSet = useRef(false);
 
   useEffect(() => {
     setPhoneRegion(inferPhoneRegionFromNavigator());
@@ -336,6 +526,8 @@ export default function Home() {
       }
     } catch {
       /* ignore background refresh errors */
+    } finally {
+      setCancellationsFetched(true);
     }
   };
 
@@ -350,6 +542,29 @@ export default function Home() {
       cancelled = true;
     };
   }, [token, step]);
+
+  // Expand the "Who are you meeting?" form by default for users with no plans.
+  useEffect(() => {
+    if (initialExpansionSet.current) return;
+    if (step !== "flake") return;
+    if (!cancellationsFetched) return;
+    setPencilInExpanded(myCancellations.length === 0);
+    initialExpansionSet.current = true;
+  }, [step, cancellationsFetched, myCancellations]);
+
+  // Default-select the next upcoming meeting once events load.
+  useEffect(() => {
+    if (myCancellations.length === 0) {
+      setSelectedCalendarYmd(null);
+      return;
+    }
+    setSelectedCalendarYmd((prev) => {
+      if (prev && myCancellations.some((e) => e.date === prev)) return prev;
+      const today = localYmd();
+      const sorted = [...myCancellations].map((e) => e.date).sort();
+      return sorted.find((d) => d >= today) ?? sorted[0] ?? null;
+    });
+  }, [myCancellations]);
 
   const signOut = () => {
     window.localStorage.removeItem(TOKEN_KEY);
@@ -649,6 +864,9 @@ export default function Home() {
     }
   };
 
+  const showCalendar =
+    !!token && (step === "flake" || step === "result") && myCancellations.length > 0;
+
   return (
     <main className="h-[100vh] h-[100dvh] max-h-[100vh] max-h-[100dvh] overflow-y-auto overscroll-none bg-gradient-to-b from-[#faf8f5] to-[#f0ece6]">
       <div
@@ -659,27 +877,29 @@ export default function Home() {
         }
       >
         <div className="w-full min-w-0 max-w-sm">
-        <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-0">
-            <Image
-              src="/logo.png"
-              alt=""
-              width={650}
-              height={662}
-              priority
-              className="h-14 w-auto shrink-0"
-            />
-            <h1 className="text-4xl font-bold text-[#3d3d3d] tracking-tight">
-              flaky
-            </h1>
+        {step === "phone" || step === "code" || step === "name" ? (
+          <div className="text-center mb-8">
+            <div className="flex items-center justify-center gap-0">
+              <Image
+                src="/logo.png"
+                alt=""
+                width={650}
+                height={662}
+                priority
+                className="h-14 w-auto shrink-0"
+              />
+              <h1 className="text-4xl font-bold text-[#3d3d3d] tracking-tight">
+                flaky
+              </h1>
+            </div>
+            <p className="text-[#8a8a8a] mt-1 text-sm">
+              cancel plans, guilt-free
+            </p>
+            <p className="text-[#a3a3a3] mt-1.5 text-xs">
+              (nobody knows, unless they cancel too)
+            </p>
           </div>
-          <p className="text-[#8a8a8a] mt-1 text-sm">
-            cancel plans, guilt-free
-          </p>
-          <p className="text-[#a3a3a3] mt-1.5 text-xs">
-            (nobody knows, unless they cancel too)
-          </p>
-        </div>
+        ) : null}
 
         <div className="bg-white rounded-2xl shadow-sm border border-[#eee] p-6">
           {error && (
@@ -884,6 +1104,38 @@ export default function Home() {
             </form>
           ) : step === "flake" ? (
             <div className="space-y-4">
+              {!profileEditOpen ? (
+                <div className="flex items-center gap-2">
+                  <Image
+                    src="/logo.png"
+                    alt="flaky"
+                    width={650}
+                    height={662}
+                    priority
+                    className="h-7 w-auto shrink-0"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProfileDraft(profileName);
+                      setProfileEditOpen(true);
+                      setError("");
+                    }}
+                    className="group min-w-0 flex-1 rounded-lg px-1 py-1.5 text-left text-xs leading-relaxed text-[#8a8a8a] transition-colors hover:bg-[#faf8f5] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#e07a5f]/40"
+                  >
+                    <span className="text-[#8a8a8a]">Signed in as </span>
+                    <span className="whitespace-normal break-words font-medium text-[#6a6a6a] underline decoration-[#ccc] underline-offset-2 transition-colors group-hover:text-[#e07a5f] group-hover:decoration-[#e07a5f]">
+                      {profileName ? (
+                        <>
+                          {profileName}
+                          <span className="font-normal text-[#a3a3a3] group-hover:text-[#e07a5f]/70"> · </span>
+                        </>
+                      ) : null}
+                      {displayMaskedSelf(phone, phoneRegion)}
+                    </span>
+                  </button>
+                </div>
+              ) : null}
               {profileEditOpen ? (
                 <div className="space-y-3 rounded-xl border border-[#eee] bg-[#fafaf9] p-3">
                   <p className="text-xs font-medium text-[#5a5a5a]">
@@ -938,55 +1190,56 @@ export default function Home() {
                     </button>
                   </div>
                 </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setProfileDraft(profileName);
-                    setProfileEditOpen(true);
-                    setError("");
-                  }}
-                  className="group w-full max-w-full min-w-0 rounded-lg px-1 py-1.5 text-center text-xs leading-relaxed text-[#8a8a8a] transition-colors hover:bg-[#faf8f5] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#e07a5f]/40"
-                >
-                  <span className="text-[#8a8a8a]">Signed in as </span>
-                  <span className="whitespace-normal break-words font-medium text-[#6a6a6a] underline decoration-[#ccc] underline-offset-2 transition-colors group-hover:text-[#e07a5f] group-hover:decoration-[#e07a5f]">
-                    {profileName ? (
-                      <>
-                        {profileName}
-                        <span className="font-normal text-[#a3a3a3] group-hover:text-[#e07a5f]/70"> · </span>
-                      </>
-                    ) : null}
-                    {displayMaskedSelf(phone, phoneRegion)}
-                  </span>
-                </button>
-              )}
+              ) : null}
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium text-[#5a5a5a]">
-                    Who are you meeting?
-                  </span>
                   <button
                     type="button"
-                    disabled={loading}
-                    onClick={() => setTargetPhones((prev) => [...prev, ""])}
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[#81b29a] text-[#5a7d6c] hover:bg-[#e8f2ec] active:bg-[#dceee4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    aria-label="Add another number"
+                    onClick={() => setPencilInExpanded((v) => !v)}
+                    aria-expanded={pencilInExpanded}
+                    className="flex flex-1 items-center gap-2 rounded-lg px-1 py-1.5 text-left text-sm font-medium text-[#5a5a5a] transition-colors hover:bg-[#faf8f5] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#e07a5f]/40"
                   >
                     <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
+                      viewBox="0 0 12 12"
+                      className={
+                        "h-3 w-3 text-[#a3a3a3] transition-transform " +
+                        (pencilInExpanded ? "rotate-90" : "")
+                      }
                       fill="none"
                       stroke="currentColor"
-                      strokeWidth={2.5}
+                      strokeWidth="2"
                       strokeLinecap="round"
-                      className="h-5 w-5"
+                      strokeLinejoin="round"
                       aria-hidden
                     >
-                      <path d="M12 5v14M5 12h14" />
+                      <path d="M4.5 2.5L8 6l-3.5 3.5" />
                     </svg>
+                    Who are you meeting?
                   </button>
+                  {pencilInExpanded ? (
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={() => setTargetPhones((prev) => [...prev, ""])}
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[#81b29a] text-[#5a7d6c] hover:bg-[#e8f2ec] active:bg-[#dceee4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      aria-label="Add another number"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={2.5}
+                        strokeLinecap="round"
+                        className="h-5 w-5"
+                        aria-hidden
+                      >
+                        <path d="M12 5v14M5 12h14" />
+                      </svg>
+                    </button>
+                  ) : null}
                 </div>
-                {targetPhones.map((targetPhone, index) => (
+                {pencilInExpanded && targetPhones.map((targetPhone, index) => (
                   <div key={index} className="flex gap-2 items-end">
                     <label
                       className="block flex-1 min-w-0"
@@ -1103,35 +1356,39 @@ export default function Home() {
                   </div>
                 ))}
               </div>
-              <label className="block">
-                <span className="text-sm font-medium text-[#5a5a5a]">
-                  What day?
-                </span>
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  min={localYmd()}
-                  max={localYmd(new Date(Date.now() + 90 * 86_400_000))}
-                  className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] bg-transparent transition-colors"
-                />
-              </label>
-              <button
-                onClick={handlePencilIn}
-                disabled={
-                  loading ||
-                  !date ||
-                  !targetPhones.some((t) => t.trim().length > 0)
-                }
-                className="w-full py-3 bg-[#e07a5f] text-white rounded-xl font-medium hover:bg-[#d06a4f] active:bg-[#c05a3f] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {loading ? "..." : "Pencil in"}
-              </button>
-              <p className="text-xs text-[#a3a3a3] text-center leading-snug">
-                By tapping Pencil in, you confirm you have permission to text
-                this person about plans you have together. They&apos;ll get one
-                SMS and can reply STOP to opt out.
-              </p>
+              {pencilInExpanded ? (
+                <>
+                  <label className="block">
+                    <span className="text-sm font-medium text-[#5a5a5a]">
+                      What day?
+                    </span>
+                    <input
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                      min={localYmd()}
+                      max={localYmd(new Date(Date.now() + 90 * 86_400_000))}
+                      className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] bg-transparent transition-colors"
+                    />
+                  </label>
+                  <button
+                    onClick={handlePencilIn}
+                    disabled={
+                      loading ||
+                      !date ||
+                      !targetPhones.some((t) => t.trim().length > 0)
+                    }
+                    className="w-full py-3 bg-[#e07a5f] text-white rounded-xl font-medium hover:bg-[#d06a4f] active:bg-[#c05a3f] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {loading ? "..." : "Pencil in"}
+                  </button>
+                  <p className="text-xs text-[#a3a3a3] text-center leading-snug">
+                    By tapping Pencil in, you confirm you have permission to
+                    text this person about plans you have together.
+                    They&apos;ll get one SMS and can reply STOP to opt out.
+                  </p>
+                </>
+              ) : null}
             </div>
           ) : step === "result" && result ? (
             <div className="text-center space-y-4 py-4">
@@ -1219,88 +1476,106 @@ export default function Home() {
           ) : null}
         </div>
 
-        {token &&
-        (step === "flake" || step === "result") &&
-        myCancellations.length > 0 ? (
-          <div className="mt-8 w-full max-w-[20rem] mx-auto">
-          <ul className="space-y-7">
-            {myCancellations.map((item) => {
-              const rowKey = myCancellationRowKey(item);
-              const busy = undoingFlakeKey === rowKey;
-              const selfE164 = normalizePhone(phone, phoneRegion);
-              const selfCancelled = !!selfE164 && (item.flakedParticipants ?? []).includes(selfE164);
-              return (
-                <li
-                  key={rowKey}
-                  className="flex items-center gap-3"
-                >
-                  <CancelProgressPie
-                    participants={item.participants}
-                    flakedParticipants={item.flakedParticipants}
-                    cancelledCount={item.cancelledCount}
-                    totalPeople={item.totalPeople}
-                    selfE164={selfE164}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-[#3d3d3d]">
-                      {formatPlanDate(item.date)}
-                    </p>
-                    <p className="text-xs text-[#8a8a8a] mt-0.5 leading-relaxed">
-                      {item.mutual ? (
-                        <span className="text-[#5a7d6c]">
-                          {meetingStatusText(item, selfCancelled)}
-                        </span>
-                      ) : (
-                        <>{meetingStatusText(item, selfCancelled)}</>
-                      )}
-                    </p>
-                    <p className="text-xs text-[#6a6a6a] mt-1.5 leading-relaxed">
-                      {[...(item.participants ?? [])]
-                        .sort((a, b) => {
-                        const ay = selfE164 && a === selfE164 ? 0 : 1;
-                        const by = selfE164 && b === selfE164 ? 0 : 1;
-                        return ay - by || a.localeCompare(b);
-                      })
-                      .map((p) =>
-                        formatParticipantForList(
-                          phone,
-                          p,
-                          profileNames,
-                          phoneRegion,
-                          contactBookNames
-                        )
-                      )
-                        .join(" · ")}
-                    </p>
-                  </div>
-                  {!item.mutual && !selfCancelled && (
-                    <button
-                      type="button"
-                      disabled={loading || busy}
-                      onClick={() => void handleOptToCancel(item)}
-                      className="shrink-0 px-3 py-1.5 min-w-[4.25rem] rounded-full border border-[#e8b5a8] text-xs font-semibold tracking-tight text-[#d06a4f] hover:border-[#e07a5f] hover:bg-[#fef6f4] hover:text-[#c05a3f] active:bg-[#fde8e2] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      aria-label="Flake — secretly want to cancel this plan"
-                    >
-                      flake
-                    </button>
-                  )}
-                  {!item.mutual && selfCancelled && (
-                    <button
-                      type="button"
-                      disabled={loading || busy}
-                      onClick={() => void handleUndoCancel(item)}
-                      className="shrink-0 px-3 py-1.5 min-w-[4.25rem] rounded-full border border-[#b8d4c4] text-xs font-semibold tracking-tight text-[#5a7d6c] hover:border-[#81b29a] hover:bg-[#f0f8f4] hover:text-[#4a6d5c] active:bg-[#e0f0e8] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      aria-label="Recommit — take back cancel for this plan"
-                    >
-                      recommit
-                    </button>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+        {showCalendar ? (
+          <div className="mt-8">
+            <CalendarPanel
+              events={myCancellations}
+              selectedYmd={selectedCalendarYmd}
+              setSelectedYmd={setSelectedCalendarYmd}
+              capacitorIos={capacitorIos}
+            />
           </div>
         ) : null}
+
+        {showCalendar && selectedCalendarYmd
+          ? (() => {
+              const selfE164 = normalizePhone(phone, phoneRegion);
+              const dayEvents = myCancellations.filter(
+                (e) => e.date === selectedCalendarYmd
+              );
+              if (dayEvents.length === 0) return null;
+              return (
+                <div className="mt-6">
+                  <p className="text-xs font-medium text-[#8a8a8a] mb-3">
+                    {formatPlanDate(selectedCalendarYmd)}
+                  </p>
+                  <ul className="space-y-5">
+                    {dayEvents.map((item) => {
+                      const rowKey = myCancellationRowKey(item);
+                      const busy = undoingFlakeKey === rowKey;
+                      const selfCancelled =
+                        !!selfE164 &&
+                        (item.flakedParticipants ?? []).includes(selfE164);
+                      return (
+                        <li key={rowKey} className="flex items-center gap-3">
+                          <CancelProgressPie
+                            participants={item.participants}
+                            flakedParticipants={item.flakedParticipants}
+                            cancelledCount={item.cancelledCount}
+                            totalPeople={item.totalPeople}
+                            selfE164={selfE164}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs text-[#8a8a8a] leading-relaxed">
+                              {item.mutual ? (
+                                <span className="text-[#5a7d6c]">
+                                  {meetingStatusText(item, selfCancelled)}
+                                </span>
+                              ) : (
+                                <>{meetingStatusText(item, selfCancelled)}</>
+                              )}
+                            </p>
+                            <p className="text-xs text-[#6a6a6a] mt-1 leading-relaxed">
+                              {[...(item.participants ?? [])]
+                                .sort((a, b) => {
+                                  const ay =
+                                    selfE164 && a === selfE164 ? 0 : 1;
+                                  const by =
+                                    selfE164 && b === selfE164 ? 0 : 1;
+                                  return ay - by || a.localeCompare(b);
+                                })
+                                .map((p) =>
+                                  formatParticipantForList(
+                                    phone,
+                                    p,
+                                    profileNames,
+                                    phoneRegion,
+                                    contactBookNames
+                                  )
+                                )
+                                .join(" · ")}
+                            </p>
+                          </div>
+                          {!item.mutual && !selfCancelled && (
+                            <button
+                              type="button"
+                              disabled={loading || busy}
+                              onClick={() => void handleOptToCancel(item)}
+                              className="shrink-0 px-3 py-1.5 min-w-[4.25rem] rounded-full border border-[#e8b5a8] text-xs font-semibold tracking-tight text-[#d06a4f] hover:border-[#e07a5f] hover:bg-[#fef6f4] hover:text-[#c05a3f] active:bg-[#fde8e2] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                              aria-label="Flake — secretly want to cancel this plan"
+                            >
+                              flake
+                            </button>
+                          )}
+                          {!item.mutual && selfCancelled && (
+                            <button
+                              type="button"
+                              disabled={loading || busy}
+                              onClick={() => void handleUndoCancel(item)}
+                              className="shrink-0 px-3 py-1.5 min-w-[4.25rem] rounded-full border border-[#b8d4c4] text-xs font-semibold tracking-tight text-[#5a7d6c] hover:border-[#81b29a] hover:bg-[#f0f8f4] hover:text-[#4a6d5c] active:bg-[#e0f0e8] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                              aria-label="Recommit — take back cancel for this plan"
+                            >
+                              recommit
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              );
+            })()
+          : null}
 
         <div className="flex justify-center mt-6">
           <a
