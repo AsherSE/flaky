@@ -870,11 +870,20 @@ export default function Home() {
   return (
     <main className="min-h-[100dvh] bg-gradient-to-b from-[#faf8f5] to-[#f0ece6]">
       <div
-        className={
-          capacitorIos
-            ? "flex min-h-[100dvh] items-start justify-center px-4 pt-[calc(env(safe-area-inset-top,0px)+4rem)] pb-[max(1rem,env(safe-area-inset-bottom,0px))]"
-            : "flex min-h-[100dvh] items-start justify-center px-4 pt-14 pb-4"
-        }
+        className={(() => {
+          const signedIn = step === "flake" || step === "result";
+          const top = capacitorIos
+            ? signedIn
+              ? "pt-[calc(env(safe-area-inset-top,0px)+1rem)]"
+              : "pt-[calc(env(safe-area-inset-top,0px)+4rem)]"
+            : signedIn
+              ? "pt-4"
+              : "pt-14";
+          const bottom = capacitorIos
+            ? "pb-[max(1rem,env(safe-area-inset-bottom,0px))]"
+            : "pb-4";
+          return `flex min-h-[100dvh] items-start justify-center px-4 ${top} ${bottom}`;
+        })()}
       >
         <div className="w-full min-w-0 max-w-sm">
         {step === "phone" || step === "code" || step === "name" ? (
