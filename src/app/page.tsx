@@ -442,9 +442,9 @@ export default function Home() {
   const [capacitorIos, setCapacitorIos] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [selectedCalendarYmd, setSelectedCalendarYmd] = useState<string | null>(null);
-  const [pencilInExpanded, setPencilInExpanded] = useState(false);
+  const [signedInPage, setSignedInPage] = useState<"calendar" | "form">("calendar");
   const [cancellationsFetched, setCancellationsFetched] = useState(false);
-  const initialExpansionSet = useRef(false);
+  const initialPageSet = useRef(false);
 
   useEffect(() => {
     setPhoneRegion(inferPhoneRegionFromNavigator());
@@ -543,13 +543,13 @@ export default function Home() {
     };
   }, [token, step]);
 
-  // Expand the "Who are you meeting?" form by default for users with no plans.
+  // Start on the form page for first-time users with no plans, calendar otherwise.
   useEffect(() => {
-    if (initialExpansionSet.current) return;
+    if (initialPageSet.current) return;
     if (step !== "flake") return;
     if (!cancellationsFetched) return;
-    setPencilInExpanded(myCancellations.length === 0);
-    initialExpansionSet.current = true;
+    setSignedInPage(myCancellations.length === 0 ? "form" : "calendar");
+    initialPageSet.current = true;
   }, [step, cancellationsFetched, myCancellations]);
 
   // Default-select the next upcoming meeting once events load.
@@ -787,6 +787,7 @@ export default function Home() {
     setResult(null);
     setError("");
     setProfileEditOpen(false);
+    setSignedInPage("calendar");
     setStep("flake");
   };
 
@@ -864,8 +865,15 @@ export default function Home() {
     }
   };
 
+  const isFlakeStep = step === "flake";
+  const onCalendarPage = isFlakeStep && signedInPage === "calendar";
+  const onFormPage = isFlakeStep && signedInPage === "form";
+  const hasMeetings = myCancellations.length > 0;
   const showCalendar =
-    !!token && (step === "flake" || step === "result") && myCancellations.length > 0;
+    !!token && (onCalendarPage || step === "result") && hasMeetings;
+  const showFormCard = !isFlakeStep || onFormPage || profileEditOpen;
+  const showPageToggle =
+    isFlakeStep && !profileEditOpen && (hasMeetings || onFormPage);
 
   return (
     <main className="min-h-[100dvh] bg-gradient-to-b from-[#faf8f5] to-[#f0ece6]">
@@ -943,6 +951,7 @@ export default function Home() {
           </div>
         ) : null}
 
+        {showFormCard ? (
         <div className="bg-white rounded-2xl shadow-sm border border-[#eee] p-6">
           {error && (
             <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg">
@@ -1203,53 +1212,31 @@ export default function Home() {
               ) : null}
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-[#5a5a5a]">
+                    Who are you meeting?
+                  </span>
                   <button
                     type="button"
-                    onClick={() => setPencilInExpanded((v) => !v)}
-                    aria-expanded={pencilInExpanded}
-                    className="flex flex-1 items-center gap-2 rounded-lg px-1 py-1.5 text-left text-sm font-medium text-[#5a5a5a] transition-colors hover:bg-[#faf8f5] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#e07a5f]/40"
+                    disabled={loading}
+                    onClick={() => setTargetPhones((prev) => [...prev, ""])}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[#81b29a] text-[#5a7d6c] hover:bg-[#e8f2ec] active:bg-[#dceee4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    aria-label="Add another number"
                   >
                     <svg
-                      viewBox="0 0 12 12"
-                      className={
-                        "h-3 w-3 text-[#a3a3a3] transition-transform " +
-                        (pencilInExpanded ? "rotate-90" : "")
-                      }
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
                       fill="none"
                       stroke="currentColor"
-                      strokeWidth="2"
+                      strokeWidth={2.5}
                       strokeLinecap="round"
-                      strokeLinejoin="round"
+                      className="h-5 w-5"
                       aria-hidden
                     >
-                      <path d="M4.5 2.5L8 6l-3.5 3.5" />
+                      <path d="M12 5v14M5 12h14" />
                     </svg>
-                    Who are you meeting?
                   </button>
-                  {pencilInExpanded ? (
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={() => setTargetPhones((prev) => [...prev, ""])}
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[#81b29a] text-[#5a7d6c] hover:bg-[#e8f2ec] active:bg-[#dceee4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      aria-label="Add another number"
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2.5}
-                        strokeLinecap="round"
-                        className="h-5 w-5"
-                        aria-hidden
-                      >
-                        <path d="M12 5v14M5 12h14" />
-                      </svg>
-                    </button>
-                  ) : null}
                 </div>
-                {pencilInExpanded && targetPhones.map((targetPhone, index) => (
+                {targetPhones.map((targetPhone, index) => (
                   <div key={index} className="flex gap-2 items-end">
                     <label
                       className="block flex-1 min-w-0"
@@ -1366,39 +1353,35 @@ export default function Home() {
                   </div>
                 ))}
               </div>
-              {pencilInExpanded ? (
-                <>
-                  <label className="block">
-                    <span className="text-sm font-medium text-[#5a5a5a]">
-                      What day?
-                    </span>
-                    <input
-                      type="date"
-                      value={date}
-                      onChange={(e) => setDate(e.target.value)}
-                      min={localYmd()}
-                      max={localYmd(new Date(Date.now() + 90 * 86_400_000))}
-                      className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] bg-transparent transition-colors"
-                    />
-                  </label>
-                  <button
-                    onClick={handlePencilIn}
-                    disabled={
-                      loading ||
-                      !date ||
-                      !targetPhones.some((t) => t.trim().length > 0)
-                    }
-                    className="w-full py-3 bg-[#e07a5f] text-white rounded-xl font-medium hover:bg-[#d06a4f] active:bg-[#c05a3f] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {loading ? "..." : "Pencil in"}
-                  </button>
-                  <p className="text-xs text-[#a3a3a3] text-center leading-snug">
-                    By tapping Pencil in, you confirm you have permission to
-                    text this person about plans you have together.
-                    They&apos;ll get one SMS and can reply STOP to opt out.
-                  </p>
-                </>
-              ) : null}
+              <label className="block">
+                <span className="text-sm font-medium text-[#5a5a5a]">
+                  What day?
+                </span>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  min={localYmd()}
+                  max={localYmd(new Date(Date.now() + 90 * 86_400_000))}
+                  className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] bg-transparent transition-colors"
+                />
+              </label>
+              <button
+                onClick={handlePencilIn}
+                disabled={
+                  loading ||
+                  !date ||
+                  !targetPhones.some((t) => t.trim().length > 0)
+                }
+                className="w-full py-3 bg-[#e07a5f] text-white rounded-xl font-medium hover:bg-[#d06a4f] active:bg-[#c05a3f] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {loading ? "..." : "Pencil in"}
+              </button>
+              <p className="text-xs text-[#a3a3a3] text-center leading-snug">
+                By tapping Pencil in, you confirm you have permission to
+                text this person about plans you have together.
+                They&apos;ll get one SMS and can reply STOP to opt out.
+              </p>
             </div>
           ) : step === "result" && result ? (
             <div className="text-center space-y-4 py-4">
@@ -1485,6 +1468,7 @@ export default function Home() {
             </div>
           ) : null}
         </div>
+        ) : null}
 
         {showCalendar ? (
           <div className="mt-8">
@@ -1586,6 +1570,56 @@ export default function Home() {
               );
             })()
           : null}
+
+        {showPageToggle ? (
+          <div className="mt-8 flex justify-center">
+            <button
+              type="button"
+              onClick={() =>
+                setSignedInPage((p) => (p === "calendar" ? "form" : "calendar"))
+              }
+              aria-label={
+                signedInPage === "calendar"
+                  ? "Pencil in a new plan"
+                  : "Back to calendar"
+              }
+              className="flex h-16 w-16 items-center justify-center rounded-full bg-[#e07a5f] text-white shadow-md transition-colors hover:bg-[#d06a4f] active:bg-[#c05a3f] focus:outline-none focus-visible:ring-4 focus-visible:ring-[#e07a5f]/30"
+            >
+              {signedInPage === "calendar" ? (
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-7 w-7"
+                  aria-hidden
+                >
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+              ) : (
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-7 w-7"
+                  aria-hidden
+                >
+                  <rect x="3" y="4" width="18" height="17" rx="2" />
+                  <path d="M3 9h18" />
+                  <path d="M8 3v3" />
+                  <path d="M16 3v3" />
+                </svg>
+              )}
+            </button>
+          </div>
+        ) : null}
 
         <div className="flex justify-center mt-6">
           <a
