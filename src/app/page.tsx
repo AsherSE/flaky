@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   analyzeFlakeTargetInput,
   normalizePhone,
@@ -442,9 +442,6 @@ export default function Home() {
   const [capacitorIos, setCapacitorIos] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [selectedCalendarYmd, setSelectedCalendarYmd] = useState<string | null>(null);
-  const [signedInPage, setSignedInPage] = useState<"calendar" | "form">("calendar");
-  const [cancellationsFetched, setCancellationsFetched] = useState(false);
-  const initialPageSet = useRef(false);
 
   useEffect(() => {
     setPhoneRegion(inferPhoneRegionFromNavigator());
@@ -526,8 +523,6 @@ export default function Home() {
       }
     } catch {
       /* ignore background refresh errors */
-    } finally {
-      setCancellationsFetched(true);
     }
   };
 
@@ -542,15 +537,6 @@ export default function Home() {
       cancelled = true;
     };
   }, [token, step]);
-
-  // Start on the form page for first-time users with no plans, calendar otherwise.
-  useEffect(() => {
-    if (initialPageSet.current) return;
-    if (step !== "flake") return;
-    if (!cancellationsFetched) return;
-    setSignedInPage(myCancellations.length === 0 ? "form" : "calendar");
-    initialPageSet.current = true;
-  }, [step, cancellationsFetched, myCancellations]);
 
   // Default-select the next upcoming meeting once events load.
   useEffect(() => {
@@ -787,7 +773,6 @@ export default function Home() {
     setResult(null);
     setError("");
     setProfileEditOpen(false);
-    setSignedInPage("calendar");
     setStep("flake");
   };
 
@@ -865,15 +850,8 @@ export default function Home() {
     }
   };
 
-  const isFlakeStep = step === "flake";
-  const onCalendarPage = isFlakeStep && signedInPage === "calendar";
-  const onFormPage = isFlakeStep && signedInPage === "form";
-  const hasMeetings = myCancellations.length > 0;
   const showCalendar =
-    !!token && (onCalendarPage || step === "result") && hasMeetings;
-  const showFormCard = !isFlakeStep || onFormPage || profileEditOpen;
-  const showPageToggle =
-    isFlakeStep && !profileEditOpen && (hasMeetings || onFormPage);
+    !!token && (step === "flake" || step === "result") && myCancellations.length > 0;
 
   return (
     <main className="min-h-[100dvh] bg-gradient-to-b from-[#faf8f5] to-[#f0ece6]">
@@ -951,7 +929,6 @@ export default function Home() {
           </div>
         ) : null}
 
-        {showFormCard ? (
         <div className="bg-white rounded-2xl shadow-sm border border-[#eee] p-6">
           {error && (
             <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg">
@@ -1468,7 +1445,6 @@ export default function Home() {
             </div>
           ) : null}
         </div>
-        ) : null}
 
         {showCalendar ? (
           <div className="mt-8">
@@ -1570,57 +1546,6 @@ export default function Home() {
               );
             })()
           : null}
-
-        {showPageToggle ? (
-          <div className="mt-8 flex justify-center">
-            <button
-              type="button"
-              onClick={() =>
-                setSignedInPage((p) => (p === "calendar" ? "form" : "calendar"))
-              }
-              aria-label={
-                signedInPage === "calendar"
-                  ? "Pencil in a new plan"
-                  : "Back to calendar"
-              }
-              className="flex h-16 w-16 items-center justify-center rounded-full bg-[#e07a5f] text-white shadow-md transition-colors hover:bg-[#d06a4f] active:bg-[#c05a3f] focus:outline-none focus-visible:ring-4 focus-visible:ring-[#e07a5f]/30"
-            >
-              {signedInPage === "calendar" ? (
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="h-7 w-7"
-                  aria-hidden
-                >
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                  <circle cx="12" cy="7" r="4" />
-                </svg>
-              ) : (
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="h-7 w-7"
-                  aria-hidden
-                >
-                  <rect x="3" y="4" width="18" height="17" rx="2" />
-                  <path d="M3 9h18" />
-                  <path d="M8 3v3" />
-                  <path d="M16 3v3" />
-                </svg>
-              )}
-            </button>
-          </div>
-        ) : null}
 
         <div className="flex justify-center mt-6">
           <a
