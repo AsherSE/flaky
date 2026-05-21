@@ -45,6 +45,18 @@ interface FlakeResult {
   smsFailures?: SmsFailureDetail[];
 }
 
+type MeetingTimeOfDay = "morning" | "lunch" | "night";
+
+const TIME_OF_DAY_VALUES: readonly MeetingTimeOfDay[] = [
+  "morning",
+  "lunch",
+  "night",
+] as const;
+
+function isTimeOfDay(v: unknown): v is MeetingTimeOfDay {
+  return v === "morning" || v === "lunch" || v === "night";
+}
+
 interface MyCancellationItem {
   date: string;
   participants?: string[];
@@ -52,6 +64,7 @@ interface MyCancellationItem {
   totalPeople: number;
   cancelledCount: number;
   mutual: boolean;
+  timeOfDay?: MeetingTimeOfDay | null;
 }
 
 function formatPlanDate(ymd: string): string {
@@ -230,6 +243,84 @@ const TOKEN_KEY = "flaky-token";
 const SKIP_NAME_KEY = "flaky-skip-name";
 
 const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"] as const;
+
+const TIME_OF_DAY_LABELS: Record<MeetingTimeOfDay, string> = {
+  morning: "Morning",
+  lunch: "Lunch",
+  night: "Night",
+};
+
+function TimeOfDayIcon({
+  kind,
+  className,
+}: {
+  kind: MeetingTimeOfDay;
+  className?: string;
+}) {
+  if (kind === "morning") {
+    // Sunrise: sun half above horizon
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={className}
+        aria-hidden
+      >
+        <path d="M3 18h18" />
+        <path d="M7 14a5 5 0 0 1 10 0" />
+        <path d="M12 4v3" />
+        <path d="M5.5 10.5l1 1" />
+        <path d="M18.5 10.5l-1 1" />
+        <path d="M2 14h2" />
+        <path d="M20 14h2" />
+      </svg>
+    );
+  }
+  if (kind === "lunch") {
+    // Full sun (high noon)
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={className}
+        aria-hidden
+      >
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2" />
+        <path d="M12 20v2" />
+        <path d="M4.93 4.93l1.41 1.41" />
+        <path d="M17.66 17.66l1.41 1.41" />
+        <path d="M2 12h2" />
+        <path d="M20 12h2" />
+        <path d="M6.34 17.66l-1.41 1.41" />
+        <path d="M19.07 4.93l-1.41 1.41" />
+      </svg>
+    );
+  }
+  // Crescent moon
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+    </svg>
+  );
+}
 
 function CalendarPanel({
   events,
@@ -421,6 +512,7 @@ export default function Home() {
   const [code, setCode] = useState("");
   const [targetPhones, setTargetPhones] = useState<string[]>([""]);
   const [date, setDate] = useState(() => localYmd());
+  const [timeOfDay, setTimeOfDay] = useState<MeetingTimeOfDay | null>(null);
   const [profileNames, setProfileNames] = useState<Record<string, string>>({});
   const [contactBookNames, setContactBookNames] = useState<
     Record<string, string>
@@ -516,6 +608,7 @@ export default function Home() {
           flakedParticipants: Array.isArray(item.flakedParticipants)
             ? item.flakedParticipants
             : [],
+          timeOfDay: isTimeOfDay(item.timeOfDay) ? item.timeOfDay : null,
         }))
       );
       if (data.profileNames && typeof data.profileNames === "object") {
@@ -727,6 +820,7 @@ export default function Home() {
         body: JSON.stringify({
           targetPhones,
           date,
+          timeOfDay,
           defaultCountry: phoneRegion,
         }),
       });
@@ -770,6 +864,7 @@ export default function Home() {
   const resetFlake = () => {
     setTargetPhones([""]);
     setDate(localYmd());
+    setTimeOfDay(null);
     setResult(null);
     setError("");
     setProfileEditOpen(false);
@@ -1330,19 +1425,51 @@ export default function Home() {
                   </div>
                 ))}
               </div>
-              <label className="block">
-                <span className="text-sm font-medium text-[#5a5a5a]">
+              <div>
+                <span className="block text-sm font-medium text-[#5a5a5a]">
                   What day?
                 </span>
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  min={localYmd()}
-                  max={localYmd(new Date(Date.now() + 90 * 86_400_000))}
-                  className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] bg-transparent transition-colors"
-                />
-              </label>
+                <div className="mt-1 flex items-end gap-2">
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    min={localYmd()}
+                    max={localYmd(new Date(Date.now() + 90 * 86_400_000))}
+                    aria-label="Meeting date"
+                    className="min-w-0 flex-1 px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] bg-transparent transition-colors"
+                  />
+                  <div
+                    className="flex shrink-0 gap-1"
+                    role="radiogroup"
+                    aria-label="Time of day"
+                  >
+                    {TIME_OF_DAY_VALUES.map((tod) => {
+                      const selected = timeOfDay === tod;
+                      return (
+                        <button
+                          key={tod}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          aria-label={TIME_OF_DAY_LABELS[tod]}
+                          onClick={() =>
+                            setTimeOfDay((cur) => (cur === tod ? null : tod))
+                          }
+                          className={
+                            "flex h-9 w-9 items-center justify-center rounded-full border transition-colors " +
+                            (selected
+                              ? "border-[#e07a5f] bg-[#e07a5f] text-white"
+                              : "border-[#e0e0e0] bg-transparent text-[#8a8a8a] hover:border-[#e07a5f] hover:text-[#e07a5f]")
+                          }
+                        >
+                          <TimeOfDayIcon kind={tod} className="h-5 w-5" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
               <button
                 onClick={handlePencilIn}
                 disabled={
@@ -1486,7 +1613,13 @@ export default function Home() {
                             selfE164={selfE164}
                           />
                           <div className="min-w-0 flex-1">
-                            <p className="text-xs text-[#8a8a8a] leading-relaxed">
+                            <p className="flex items-center gap-1.5 text-xs text-[#8a8a8a] leading-relaxed">
+                              {item.timeOfDay ? (
+                                <TimeOfDayIcon
+                                  kind={item.timeOfDay}
+                                  className="h-3.5 w-3.5 shrink-0 text-[#a3a3a3]"
+                                />
+                              ) : null}
                               {item.mutual ? (
                                 <span className="text-[#5a7d6c]">
                                   {meetingStatusText(item, selfCancelled)}

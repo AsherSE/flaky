@@ -14,6 +14,19 @@ export const dynamic = "force-dynamic";
 const SEVEN_DAYS = 7 * 24 * 60 * 60;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+type MeetingTimeOfDay = "morning" | "lunch" | "night";
+const TIME_OF_DAY_VALUES = new Set<MeetingTimeOfDay>([
+  "morning",
+  "lunch",
+  "night",
+]);
+function isTimeOfDay(v: unknown): v is MeetingTimeOfDay {
+  return typeof v === "string" && TIME_OF_DAY_VALUES.has(v as MeetingTimeOfDay);
+}
+function flakeMetaKey(flakeKey: string) {
+  return `flakeMeta:${flakeKey}`;
+}
+
 /** Calendar "today" for plan dates (YYYY-MM-DD). Defaults to UTC; set FLAKY_PLAN_DATE_TZ (IANA) if needed. */
 function planCalendarTodayYmd(): string {
   const tz = process.env.FLAKY_PLAN_DATE_TZ?.trim() || "UTC";
@@ -34,7 +47,7 @@ async function pruneFlakeEverywhere(
   flakeKey: string,
   participants: string[]
 ): Promise<void> {
-  await redis.del(flakeKey);
+  await Promise.all([redis.del(flakeKey), redis.del(flakeMetaKey(flakeKey))]);
   await Promise.all(
     participants.map((p) => redis.srem(userFlakesIndexKey(p), flakeKey))
   );
@@ -191,11 +204,30 @@ export async function GET(req: NextRequest) {
         return null;
       }
 
-      const flaked = await getFlakeMembers(flakeKey);
+      const [flaked, meta] = await Promise.all([
+        getFlakeMembers(flakeKey),
+        redis.get<unknown>(flakeMetaKey(flakeKey)),
+      ]);
 
       const total = parsed.participants.length;
       const cancelledCount = flaked.length;
       const everyoneIn = total > 0 && cancelledCount >= total;
+
+      let timeOfDay: MeetingTimeOfDay | null = null;
+      if (meta && typeof meta === "object") {
+        const tod = (meta as Record<string, unknown>).timeOfDay;
+        if (isTimeOfDay(tod)) timeOfDay = tod;
+      } else if (typeof meta === "string") {
+        try {
+          const parsedMeta: unknown = JSON.parse(meta);
+          if (parsedMeta && typeof parsedMeta === "object") {
+            const tod = (parsedMeta as Record<string, unknown>).timeOfDay;
+            if (isTimeOfDay(tod)) timeOfDay = tod;
+          }
+        } catch {
+          /* ignore */
+        }
+      }
 
       return {
         date: parsed.date,
@@ -204,6 +236,7 @@ export async function GET(req: NextRequest) {
         totalPeople: total,
         cancelledCount,
         mutual: everyoneIn,
+        timeOfDay,
       };
     })
   );
@@ -277,10 +310,21 @@ export async function POST(req: NextRequest) {
   }
   const targets = analysis.targetsE164;
 
+  const timeOfDayRaw = (o as Record<string, unknown>).timeOfDay;
+  const timeOfDay = isTimeOfDay(timeOfDayRaw) ? timeOfDayRaw : null;
+
   const participants = Array.from(new Set([myPhone, ...targets])).sort();
   const flakeKey = `flake:${participants.join(":")}:${date}`;
 
   await Promise.all(participants.map((p) => indexMeetingForUser(p, flakeKey)));
+
+  if (timeOfDay) {
+    const metaKey = flakeMetaKey(flakeKey);
+    await redis.set(metaKey, JSON.stringify({ timeOfDay }));
+    await redis.expire(metaKey, SEVEN_DAYS);
+  } else {
+    await redis.del(flakeMetaKey(flakeKey)).catch(() => {});
+  }
 
   const creatorName = await redis.get<string>(profileKey(myPhone));
   const who = creatorName || "Someone";
