@@ -6,7 +6,7 @@ import {
   resolvePhoneRegion,
 } from "@/lib/phone";
 import { getRandomMessage } from "@/lib/messages";
-import { sendSMS, twilioSendErrorInfo } from "@/lib/twilio";
+import { sendSMS } from "@/lib/twilio";
 import { profileKey } from "@/lib/profile";
 import { createMeetingRecord } from "@/lib/meeting";
 
@@ -345,46 +345,13 @@ export async function POST(req: NextRequest) {
     console.error("Failed to create meeting record:", e);
   }
 
-  const smsBody = `flaky: ${who} penciled you in for plans on ${date}. See plans: https://flaky.me\n\nReply STOP to opt out, HELP for help. Msg & data rates may apply.`;
-  const smsResults = await Promise.all(
-    targets.map(async (to) => {
-      try {
-        await sendSMS(to, smsBody);
-        return { to, ok: true as const };
-      } catch (e) {
-        const info = twilioSendErrorInfo(e);
-        console.error("Failed to send invitation SMS to", to, info);
-        return {
-          to,
-          ok: false as const,
-          code: info.code,
-          message: info.message,
-          moreInfo: info.moreInfo,
-        };
-      }
-    })
-  );
-  const smsFailed = smsResults.filter((r) => !r.ok);
-  if (smsFailed.length > 0) {
-    console.error("SMS failures:", JSON.stringify(smsFailed));
-  }
-
+  // Note: we no longer auto-text invitees here. Inviting is now an explicit
+  // choice on the result screen \u2014 "Send to group" (native composer, from the
+  // user) or "Send individually" (Twilio, via POST /api/flake/notify).
   return NextResponse.json({
     penciled: true,
     meetingId,
     inviteUrl: meetingId ? `https://flaky.me/m/${meetingId}` : null,
-    smsWarning: smsFailed.length > 0
-      ? `Text couldn\u2019t be sent to ${smsFailed.length} number${smsFailed.length > 1 ? "s" : ""}. They can still find the meeting when they open flaky.`
-      : null,
-    smsFailures:
-      smsFailed.length > 0
-        ? smsFailed.map((r) => ({
-            to: r.to,
-            code: r.code,
-            message: r.message,
-            moreInfo: r.moreInfo,
-          }))
-        : undefined,
   });
 }
 

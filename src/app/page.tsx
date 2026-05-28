@@ -46,6 +46,8 @@ interface FlakeResult {
   smsFailures?: SmsFailureDetail[];
   /** Shareable invite link for this meeting (/m/<id>), when available. */
   inviteUrl?: string;
+  /** Stable meeting id, for the "Send individually" (Twilio) action. */
+  meetingId?: string;
   /** The penciled-in date (YYYY-MM-DD), for the group-chat invite body. */
   date?: string;
   /** Other participants' E.164 numbers, to pre-fill the Messages composer. */
@@ -540,6 +542,8 @@ export default function Home() {
   const [phoneRegion, setPhoneRegion] = useState<CountryCode>("US");
   const [capacitorIos, setCapacitorIos] = useState(false);
   const [composerBusy, setComposerBusy] = useState(false);
+  const [notifyBusy, setNotifyBusy] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [selectedCalendarYmd, setSelectedCalendarYmd] = useState<string | null>(null);
 
@@ -837,36 +841,24 @@ export default function Home() {
         if (res.status === 401) signOut();
         throw new Error(data.error || "Something went wrong");
       }
-      const smsWarn = typeof data.smsWarning === "string" ? data.smsWarning : "";
-      const smsFailures: SmsFailureDetail[] = [];
-      const rawFailures = data.smsFailures;
-      if (Array.isArray(rawFailures)) {
-        for (const row of rawFailures) {
-          if (!row || typeof row !== "object") continue;
-          const r = row as Record<string, unknown>;
-          const to = typeof r.to === "string" ? r.to : "";
-          if (!to) continue;
-          const message =
-            typeof r.message === "string" ? r.message : "Unknown error";
-          const code = typeof r.code === "number" ? r.code : undefined;
-          const moreInfo =
-            typeof r.moreInfo === "string" ? r.moreInfo : undefined;
-          smsFailures.push({ to, code, message, moreInfo });
-        }
-      }
       const inviteUrl =
         typeof data.inviteUrl === "string" ? data.inviteUrl : undefined;
-      setResult({
+      const meetingId =
+        typeof data.meetingId === "string" ? data.meetingId : undefined;
+      const pencilResult: FlakeResult = {
         type: "penciled",
         mutual: false,
-        message: smsWarn,
-        smsFailures: smsFailures.length > 0 ? smsFailures : undefined,
+        message: "",
         inviteUrl,
+        meetingId,
         date,
         recipients: flakeCheck.targetsE164,
-      });
+      };
+      setResult(pencilResult);
       setStep("result");
       if (token) void refreshCancellations(token);
+      // Auto-open the group composer so the invite is one tap from going out.
+      void handleSendInGroupChat(pencilResult);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Something went wrong");
     } finally {
@@ -895,12 +887,79 @@ export default function Home() {
     }
   };
 
+  const handleCopyLink = async (r: FlakeResult) => {
+    if (!r.inviteUrl) return;
+    setError("");
+    try {
+      await navigator.clipboard.writeText(r.inviteUrl);
+      setLinkCopied(true);
+      window.setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      setError("Couldn’t copy the link. Long-press it to copy manually.");
+    }
+  };
+
+  const handleSendIndividually = async (r: FlakeResult) => {
+    if (!r.meetingId || !token) return;
+    setNotifyBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/flake/notify", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ meetingId: r.meetingId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 401) signOut();
+        throw new Error(
+          typeof data.error === "string" ? data.error : "Couldn’t send texts"
+        );
+      }
+      const smsFailures: SmsFailureDetail[] = [];
+      if (Array.isArray(data.smsFailures)) {
+        for (const row of data.smsFailures) {
+          if (!row || typeof row !== "object") continue;
+          const rr = row as Record<string, unknown>;
+          const to = typeof rr.to === "string" ? rr.to : "";
+          if (!to) continue;
+          smsFailures.push({
+            to,
+            code: typeof rr.code === "number" ? rr.code : undefined,
+            message:
+              typeof rr.message === "string" ? rr.message : "Unknown error",
+            moreInfo: typeof rr.moreInfo === "string" ? rr.moreInfo : undefined,
+          });
+        }
+      }
+      const smsWarn =
+        typeof data.smsWarning === "string" ? data.smsWarning : "";
+      setResult((prev) =>
+        prev
+          ? {
+              ...prev,
+              message: smsWarn || "Sent! Everyone got their own text.",
+              smsFailures: smsFailures.length > 0 ? smsFailures : undefined,
+            }
+          : prev
+      );
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setNotifyBusy(false);
+    }
+  };
+
   const resetFlake = () => {
     setTargetPhones([""]);
     setDate(localYmd());
     setTimeOfDay(null);
     setResult(null);
     setError("");
+    setLinkCopied(false);
     setProfileEditOpen(false);
     setStep("flake");
   };
@@ -1517,8 +1576,9 @@ export default function Home() {
               </button>
               <p className="text-xs text-[#a3a3a3] text-center leading-snug">
                 By tapping Pencil in, you confirm you have permission to
-                text this person about plans you have together.
-                They&apos;ll get one SMS and can reply STOP to opt out.
+                text this person about plans you have together. You choose
+                how to invite them next; any SMS lets them reply STOP to opt
+                out.
               </p>
             </div>
           ) : step === "result" && result ? (
@@ -1534,7 +1594,7 @@ export default function Home() {
                   <p className="text-[#6a6a6a] leading-relaxed">
                     {result.message
                       ? result.message
-                      : "They\u2019ll get a text about it. If anyone secretly wants out, they can tap flake."}
+                      : "Now send them the invite. If anyone secretly wants out, they can tap flake."}
                   </p>
                   {result.smsFailures && result.smsFailures.length > 0 ? (
                     <div className="rounded-lg border border-[#eee] bg-[#fafaf9] px-3 py-2 text-left text-xs text-[#6a6a6a] space-y-2">
@@ -1571,17 +1631,35 @@ export default function Home() {
                       </ul>
                     </div>
                   ) : null}
-                  {capacitorIos &&
-                  result.inviteUrl &&
-                  result.recipients &&
-                  result.recipients.length > 0 ? (
-                    <button
-                      onClick={() => handleSendInGroupChat(result)}
-                      disabled={composerBusy}
-                      className="w-full py-3 bg-[#e07a5f] text-white rounded-xl font-medium hover:bg-[#d06a4f] active:bg-[#c05a3f] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      {composerBusy ? "..." : "Send invite in your group chat"}
-                    </button>
+                  {result.inviteUrl ? (
+                    <div className="space-y-2 pt-1">
+                      {capacitorIos &&
+                      result.recipients &&
+                      result.recipients.length > 0 ? (
+                        <button
+                          onClick={() => handleSendInGroupChat(result)}
+                          disabled={composerBusy}
+                          className="w-full py-3 bg-[#e07a5f] text-white rounded-xl font-medium hover:bg-[#d06a4f] active:bg-[#c05a3f] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {composerBusy ? "..." : "Send to group"}
+                        </button>
+                      ) : null}
+                      <button
+                        onClick={() => handleCopyLink(result)}
+                        className="w-full py-3 bg-[#f0ece6] text-[#3d3d3d] rounded-xl font-medium hover:bg-[#e8e2da] active:bg-[#ddd6cc] transition-colors"
+                      >
+                        {linkCopied ? "Copied!" : "Copy link"}
+                      </button>
+                      {result.recipients && result.recipients.length > 0 ? (
+                        <button
+                          onClick={() => handleSendIndividually(result)}
+                          disabled={notifyBusy}
+                          className="w-full py-3 bg-[#f0ece6] text-[#3d3d3d] rounded-xl font-medium hover:bg-[#e8e2da] active:bg-[#ddd6cc] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {notifyBusy ? "..." : "Send individually"}
+                        </button>
+                      ) : null}
+                    </div>
                   ) : null}
                 </>
               ) : result.mutual ? (
