@@ -8,6 +8,7 @@ import {
 import { getRandomMessage } from "@/lib/messages";
 import { sendSMS, twilioSendErrorInfo } from "@/lib/twilio";
 import { profileKey } from "@/lib/profile";
+import { createMeetingRecord } from "@/lib/meeting";
 
 export const dynamic = "force-dynamic";
 
@@ -328,6 +329,22 @@ export async function POST(req: NextRequest) {
 
   const creatorName = await redis.get<string>(profileKey(myPhone));
   const who = creatorName || "Someone";
+
+  // Give the meeting a stable id so it can be shared as an invite link
+  // (/m/<id>) that lands the opener on this specific plan — the groundwork
+  // for forwarding a meeting and growing the group later.
+  let meetingId: string | null = null;
+  try {
+    meetingId = await createMeetingRecord({
+      flakeKey,
+      participants,
+      date,
+      creator: who,
+    });
+  } catch (e) {
+    console.error("Failed to create meeting record:", e);
+  }
+
   const smsBody = `flaky: ${who} penciled you in for plans on ${date}. See plans: https://flaky.me\n\nReply STOP to opt out, HELP for help. Msg & data rates may apply.`;
   const smsResults = await Promise.all(
     targets.map(async (to) => {
@@ -354,6 +371,8 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     penciled: true,
+    meetingId,
+    inviteUrl: meetingId ? `https://flaky.me/m/${meetingId}` : null,
     smsWarning: smsFailed.length > 0
       ? `Text couldn\u2019t be sent to ${smsFailed.length} number${smsFailed.length > 1 ? "s" : ""}. They can still find the meeting when they open flaky.`
       : null,

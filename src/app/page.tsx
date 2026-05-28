@@ -16,6 +16,7 @@ import {
   isCapacitorIOS,
   pickPhoneFromContacts,
 } from "@/lib/contact-picker";
+import { composeGroupInvite } from "@/lib/message-composer";
 import {
   loadContactBookNames,
   withContactBookName,
@@ -43,6 +44,12 @@ interface FlakeResult {
   mutual: boolean;
   message: string;
   smsFailures?: SmsFailureDetail[];
+  /** Shareable invite link for this meeting (/m/<id>), when available. */
+  inviteUrl?: string;
+  /** The penciled-in date (YYYY-MM-DD), for the group-chat invite body. */
+  date?: string;
+  /** Other participants' E.164 numbers, to pre-fill the Messages composer. */
+  recipients?: string[];
 }
 
 type MeetingTimeOfDay = "morning" | "lunch" | "night";
@@ -532,6 +539,7 @@ export default function Home() {
   const [undoingFlakeKey, setUndoingFlakeKey] = useState<string | null>(null);
   const [phoneRegion, setPhoneRegion] = useState<CountryCode>("US");
   const [capacitorIos, setCapacitorIos] = useState(false);
+  const [composerBusy, setComposerBusy] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [selectedCalendarYmd, setSelectedCalendarYmd] = useState<string | null>(null);
 
@@ -846,11 +854,16 @@ export default function Home() {
           smsFailures.push({ to, code, message, moreInfo });
         }
       }
+      const inviteUrl =
+        typeof data.inviteUrl === "string" ? data.inviteUrl : undefined;
       setResult({
         type: "penciled",
         mutual: false,
         message: smsWarn,
         smsFailures: smsFailures.length > 0 ? smsFailures : undefined,
+        inviteUrl,
+        date,
+        recipients: flakeCheck.targetsE164,
       });
       setStep("result");
       if (token) void refreshCancellations(token);
@@ -858,6 +871,27 @@ export default function Home() {
       setError(e instanceof Error ? e.message : "Something went wrong");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSendInGroupChat = async (r: FlakeResult) => {
+    if (!r.inviteUrl || !r.recipients || r.recipients.length === 0) return;
+    setComposerBusy(true);
+    setError("");
+    try {
+      const when = r.date ? formatPlanDate(r.date) : "soon";
+      const body = `I penciled us in for plans on ${when} 📝 — if anyone secretly wants to bail, you can flake guilt-free here: ${r.inviteUrl}`;
+      const outcome = await composeGroupInvite({
+        body,
+        recipients: r.recipients,
+      });
+      if (outcome === "failed" || outcome === "unavailable") {
+        setError(
+          "Couldn’t open Messages. You can still copy the invite link and paste it into your group chat."
+        );
+      }
+    } finally {
+      setComposerBusy(false);
     }
   };
 
@@ -1536,6 +1570,18 @@ export default function Home() {
                         ))}
                       </ul>
                     </div>
+                  ) : null}
+                  {capacitorIos &&
+                  result.inviteUrl &&
+                  result.recipients &&
+                  result.recipients.length > 0 ? (
+                    <button
+                      onClick={() => handleSendInGroupChat(result)}
+                      disabled={composerBusy}
+                      className="w-full py-3 bg-[#e07a5f] text-white rounded-xl font-medium hover:bg-[#d06a4f] active:bg-[#c05a3f] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {composerBusy ? "..." : "Send invite in your group chat"}
+                    </button>
                   ) : null}
                 </>
               ) : result.mutual ? (
