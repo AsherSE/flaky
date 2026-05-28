@@ -858,7 +858,8 @@ export default function Home() {
       setStep("result");
       if (token) void refreshCancellations(token);
       // Auto-open the group composer so the invite is one tap from going out.
-      void handleSendInGroupChat(pencilResult);
+      // Native iOS only — on web there's no composer to open.
+      if (capacitorIos) void handleSendInGroupChat(pencilResult);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Something went wrong");
     } finally {
@@ -877,7 +878,7 @@ export default function Home() {
         body,
         recipients: r.recipients,
       });
-      if (outcome === "failed" || outcome === "unavailable") {
+      if (outcome === "failed") {
         setError(
           "Couldn’t open Messages. You can still copy the invite link and paste it into your group chat."
         );

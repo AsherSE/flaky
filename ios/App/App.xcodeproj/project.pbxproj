@@ -17,6 +17,7 @@
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		F1A2B3C4D5E6F70100000003 /* MyViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F70100000001 /* MyViewController.swift */; };
 		F1A2B3C4D5E6F70100000004 /* ContactPickerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F70100000002 /* ContactPickerPlugin.swift */; };
+		F1A2B3C4D5E6F70100000005 /* MessageComposerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F70100000006 /* MessageComposerPlugin.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +33,7 @@
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		F1A2B3C4D5E6F70100000001 /* MyViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyViewController.swift; sourceTree = "<group>"; };
 		F1A2B3C4D5E6F70100000002 /* ContactPickerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactPickerPlugin.swift; sourceTree = "<group>"; };
+		F1A2B3C4D5E6F70100000006 /* MessageComposerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageComposerPlugin.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -70,6 +72,7 @@
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				F1A2B3C4D5E6F70100000001 /* MyViewController.swift */,
 				F1A2B3C4D5E6F70100000002 /* ContactPickerPlugin.swift */,
+				F1A2B3C4D5E6F70100000006 /* MessageComposerPlugin.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -164,6 +167,7 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				F1A2B3C4D5E6F70100000003 /* MyViewController.swift in Sources */,
 				F1A2B3C4D5E6F70100000004 /* ContactPickerPlugin.swift in Sources */,
+				F1A2B3C4D5E6F70100000005 /* MessageComposerPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
