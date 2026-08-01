@@ -8,6 +8,19 @@ body {
   overscroll-behavior: none;
 }
 
+/*
+ * Inter first, then Tailwind's default sans stack, then the emoji fonts. The
+ * emoji entries matter: the UI leans on 📝 / 🤫 / 🛋️ to carry meaning, and
+ * naming a font that has them beats relying on the browser to fall back on our
+ * behalf. Without this, iOS Simulator renders them as ☐.
+ */
+body {
+  font-family:
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
 input[type="date"]::-webkit-date-and-time-value {
   text-align: left;
 }

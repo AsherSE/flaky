@@ -3,7 +3,9 @@ import { Analytics } from "@vercel/analytics/react";
 import { Inter } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] });
+// Exposed as a CSS variable rather than a class so globals.css can put emoji
+// fonts after it in the stack — see the body rule there.
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 const siteDescription =
   "Secretly flag that you want to cancel. If they feel the same, you're both off the hook.";
@@ -63,7 +65,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={inter.className}>
+      <body className={inter.variable}>
         {children}
         <Analytics />
       </body>
