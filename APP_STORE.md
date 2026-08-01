@@ -129,11 +129,18 @@ Both must be set in Vercel production and deployed before review:
 
 ```
 FLAKY_DEMO_PHONES=+12025550143,+13105550123
-FLAKY_DEMO_CODE=<long random string>
+FLAKY_DEMO_CODE=432735
 ```
 
-Demo numbers must pass `libphonenumber-js/max` validation or sign-in rejects
-them before the demo check runs. The NANP 555-01xx fiction range validates;
-`+15551234567` and the UK `+447700900xxx` range do **not**.
+Two constraints, both verified the hard way in the simulator — get either wrong
+and the reviewer cannot sign in at all:
 
-Rotate `FLAKY_DEMO_CODE` after review — it is a standing credential.
+1. **`FLAKY_DEMO_CODE` must be exactly 6 digits.** The code input strips
+   non-digits and caps at `maxLength={6}`, and Verify stays disabled below 6
+   characters. A longer or alphanumeric code physically cannot be entered.
+2. **Demo numbers must pass `libphonenumber-js/max` validation**, or sign-in is
+   rejected before the demo check runs. The NANP 555-01xx fiction range
+   validates; `+15551234567` and the UK `+447700900xxx` range do **not**.
+
+Rotate `FLAKY_DEMO_CODE` after review — it is a standing credential. Brute force
+is bounded by the existing 5-per-10-minutes limit on `rl:verify:{phone}`.

@@ -8,10 +8,16 @@
  * mutual cancel) without a single real SMS going out.
  *
  * Off unless BOTH env vars are set. FLAKY_DEMO_CODE is a standing credential —
- * make it long and random, and rotate it after review.
+ * rotate it after review.
  *
  *   FLAKY_DEMO_PHONES=+12025550143,+13105550123
- *   FLAKY_DEMO_CODE=<long random string>
+ *   FLAKY_DEMO_CODE=432735
+ *
+ * FLAKY_DEMO_CODE must be EXACTLY 6 DIGITS. The code field strips non-digits
+ * (`.replace(/\D/g, "")`), caps at maxLength 6, and keeps Verify disabled below
+ * 6 characters — so anything longer or non-numeric simply cannot be typed in,
+ * and a reviewer would be stuck on the sign-in screen. Brute force is bounded
+ * by the existing 5-per-10-minutes limit on `rl:verify:{phone}`.
  *
  * Numbers must be ones normalizePhone() accepts, or sign-in 400s before it ever
  * reaches the demo check. libphonenumber-js/max is strict: +15551234567 and the
