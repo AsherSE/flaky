@@ -6,8 +6,8 @@ it is reusable for every release, not just the first.
 ## App Review notes
 
 Paste into **App Store Connect → your build → App Review Information → Notes**.
-Replace `<CODE>` with the live `FLAKY_DEMO_CODE`, and the numbers with whatever
-`FLAKY_DEMO_PHONES` is set to.
+The credentials below are the live ones — update them here if you rotate
+`FLAKY_DEMO_CODE` or change `FLAKY_DEMO_PHONES`.
 
 > flaky helps friends call off plans without anyone having to be the one who
 > backs out. You pencil in a plan with someone; either side can then privately
@@ -21,7 +21,7 @@ Replace `<CODE>` with the live `FLAKY_DEMO_CODE`, and the numbers with whatever
 >
 >   Account 1: +1 202 555 0143
 >   Account 2: +1 310 555 0123
->   Code for both: <CODE>
+>   Code for both: 432735
 >
 > Enter the number on the first screen, continue, then enter the code above. No
 > real SMS is sent to or from these numbers.
