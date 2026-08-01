@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { normalizePhone, resolvePhoneRegion } from "@/lib/phone";
 import { sendVerification } from "@/lib/twilio";
 import { rateLimit, rateLimitError } from "@/lib/rate-limit";
+import { isDemoPhone } from "@/lib/demo";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,11 @@ export async function POST(req: NextRequest) {
       { error: "Enter a valid phone number" },
       { status: 400 }
     );
+  }
+
+  // Review accounts have a fixed code — nothing to send, and no Twilio spend.
+  if (isDemoPhone(phone)) {
+    return NextResponse.json({ ok: true });
   }
 
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";

@@ -9,11 +9,16 @@ import { getRandomMessage } from "@/lib/messages";
 import { sendSMS } from "@/lib/twilio";
 import { profileKey } from "@/lib/profile";
 import { createMeetingRecord } from "@/lib/meeting";
+import {
+  DATE_RE,
+  flakeMetaKey,
+  parseFlakeRedisKey,
+  userFlakesIndexKey,
+} from "@/lib/flake-keys";
 
 export const dynamic = "force-dynamic";
 
 const SEVEN_DAYS = 7 * 24 * 60 * 60;
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 type MeetingTimeOfDay = "morning" | "lunch" | "night";
 const TIME_OF_DAY_VALUES = new Set<MeetingTimeOfDay>([
@@ -23,9 +28,6 @@ const TIME_OF_DAY_VALUES = new Set<MeetingTimeOfDay>([
 ]);
 function isTimeOfDay(v: unknown): v is MeetingTimeOfDay {
   return typeof v === "string" && TIME_OF_DAY_VALUES.has(v as MeetingTimeOfDay);
-}
-function flakeMetaKey(flakeKey: string) {
-  return `flakeMeta:${flakeKey}`;
 }
 
 /** Calendar "today" for plan dates (YYYY-MM-DD). Defaults to UTC; set FLAKY_PLAN_DATE_TZ (IANA) if needed. */
@@ -39,10 +41,6 @@ function planCalendarTodayYmd(): string {
   }).format(new Date());
 }
 
-function userFlakesIndexKey(phone: string) {
-  return `userFlakes:${phone}`;
-}
-
 /** Remove meeting data and drop the key from every participant's index. */
 async function pruneFlakeEverywhere(
   flakeKey: string,
@@ -52,19 +50,6 @@ async function pruneFlakeEverywhere(
   await Promise.all(
     participants.map((p) => redis.srem(userFlakesIndexKey(p), flakeKey))
   );
-}
-
-function parseFlakeRedisKey(flakeKey: string): {
-  participants: string[];
-  date: string;
-} | null {
-  const parts = flakeKey.split(":");
-  if (parts.length < 4 || parts[0] !== "flake") return null;
-  const date = parts[parts.length - 1]!.trim();
-  if (!DATE_RE.test(date)) return null;
-  const participants = parts.slice(1, -1);
-  if (participants.length < 2) return null;
-  return { participants, date };
 }
 
 async function indexMeetingForUser(phone: string, flakeKey: string) {

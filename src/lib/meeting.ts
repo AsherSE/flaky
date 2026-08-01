@@ -21,6 +21,15 @@ export function meetingRecordKey(id: string): string {
   return `meeting:${id}`;
 }
 
+/**
+ * Meeting ids a phone number appears in. Records are keyed by a random id and
+ * hold participant numbers, so without this index account deletion has no way
+ * to find them and would leave personal data behind.
+ */
+export function userMeetingsKey(phoneE164: string): string {
+  return `userMeetings:${phoneE164}`;
+}
+
 const ID_ALPHABET =
   "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
@@ -43,6 +52,16 @@ export async function createMeetingRecord(
   const key = meetingRecordKey(id);
   await redis.set(key, JSON.stringify(record));
   await redis.expire(key, SEVEN_DAYS);
+
+  // Index for every participant so deleteAccount() can purge these later.
+  await Promise.all(
+    record.participants.map(async (p) => {
+      const idx = userMeetingsKey(p);
+      await redis.sadd(idx, id);
+      await redis.expire(idx, SEVEN_DAYS);
+    })
+  );
+
   return id;
 }
 

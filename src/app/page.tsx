@@ -546,6 +546,7 @@ export default function Home() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [selectedCalendarYmd, setSelectedCalendarYmd] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
     setPhoneRegion(inferPhoneRegionFromNavigator());
@@ -670,7 +671,39 @@ export default function Home() {
     setProfileDraft("");
     window.localStorage.removeItem(SKIP_NAME_KEY);
     setMyCancellations([]);
+    setConfirmingDelete(false);
     setStep("phone");
+  };
+
+  const handleDeleteAccount = async () => {
+    const authToken =
+      token ??
+      (typeof window !== "undefined"
+        ? window.localStorage.getItem(TOKEN_KEY)
+        : null);
+    if (!authToken) {
+      signOut();
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/account", {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      // A dead session means the account is already gone as far as we care.
+      if (!res.ok && res.status !== 401) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Couldn't delete your account");
+      }
+      signOut();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+      setConfirmingDelete(false);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -1100,6 +1133,7 @@ export default function Home() {
               onClick={() => {
                 setProfileDraft(profileName);
                 setProfileEditOpen(true);
+                setConfirmingDelete(false);
                 setError("");
               }}
               className="group mt-2 inline-flex max-w-full items-center rounded-lg px-2 py-1 text-xs leading-relaxed text-[#8a8a8a] transition-colors hover:bg-[#faf8f5] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#e07a5f]/40"
@@ -1373,6 +1407,44 @@ export default function Home() {
                     >
                       Cancel
                     </button>
+                  </div>
+                  <div className="border-t border-[#eee] pt-3">
+                    {confirmingDelete ? (
+                      <div className="space-y-3">
+                        <p className="text-xs leading-relaxed text-[#5a5a5a]">
+                          This deletes your account, your name, and every plan
+                          you&rsquo;re part of — for everyone in them. It
+                          can&rsquo;t be undone.
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            disabled={loading}
+                            onClick={() => void handleDeleteAccount()}
+                            className="flex-1 py-2.5 bg-[#b0402e] text-white rounded-xl text-sm font-medium hover:bg-[#9a3826] disabled:opacity-50"
+                          >
+                            {loading ? "Deleting..." : "Delete my account"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={loading}
+                            onClick={() => setConfirmingDelete(false)}
+                            className="flex-1 py-2.5 border border-[#ddd] text-[#5a5a5a] rounded-xl text-sm font-medium hover:bg-white disabled:opacity-50"
+                          >
+                            Keep it
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={loading}
+                        onClick={() => setConfirmingDelete(true)}
+                        className="text-xs text-[#b0402e] underline decoration-[#e0b5ac] underline-offset-2 hover:text-[#9a3826] disabled:opacity-50"
+                      >
+                        Delete my account
+                      </button>
+                    )}
                   </div>
                 </div>
               ) : null}

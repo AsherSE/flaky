@@ -4,6 +4,8 @@ import { checkVerification } from "@/lib/twilio";
 import { redis } from "@/lib/redis";
 import { SESSION_TTL_SEC } from "@/lib/session-ttl";
 import { rateLimit, rateLimitError } from "@/lib/rate-limit";
+import { demoCodeMatches, isDemoPhone } from "@/lib/demo";
+import { rememberSession } from "@/lib/account";
 
 export const dynamic = "force-dynamic";
 
@@ -48,13 +50,16 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const valid = await checkVerification(phone, code);
+    const valid = isDemoPhone(phone)
+      ? demoCodeMatches(code)
+      : await checkVerification(phone, code);
     if (!valid) {
       return NextResponse.json({ error: "Wrong code" }, { status: 400 });
     }
 
     const token = crypto.randomUUID();
     await redis.set(`session:${token}`, phone, { ex: SESSION_TTL_SEC });
+    await rememberSession(phone, token);
 
     return NextResponse.json({ token });
   } catch (e) {

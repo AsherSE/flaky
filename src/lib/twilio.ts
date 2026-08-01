@@ -1,4 +1,5 @@
 import twilio from "twilio";
+import { isDemoPhone } from "@/lib/demo";
 
 /** Parse Twilio REST errors from the Node SDK for logs and UI hints. */
 export function twilioSendErrorInfo(e: unknown): {
@@ -46,5 +47,11 @@ export async function checkVerification(
 }
 
 export async function sendSMS(to: string, body: string) {
+  // App Review numbers are placeholders — texting them would either fail or
+  // reach a stranger. Swallow it so reviewer flows still report success.
+  if (isDemoPhone(to)) {
+    console.log("Skipping SMS to demo number", to);
+    return null;
+  }
   return client.messages.create({ to, from: fromNumber, body });
 }

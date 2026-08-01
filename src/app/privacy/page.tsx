@@ -121,6 +121,22 @@ export default function PrivacyPage() {
 
         <section className="mt-10 space-y-4 text-[#5a5a5a] leading-relaxed">
           <h2 className="text-lg font-semibold text-[#3d3d3d]">
+            Deleting your account
+          </h2>
+          <p>
+            You can delete your account at any time from inside flaky: tap{" "}
+            <strong className="text-[#3d3d3d]">Signed in as…</strong> at the top
+            of the app, then{" "}
+            <strong className="text-[#3d3d3d]">Delete my account</strong>. This
+            immediately and permanently removes your phone number, your display
+            name, your sessions on every device, and every plan you are part of.
+            Because a plan is shared, deleting your account also removes those
+            plans for the other people in them. It cannot be undone.
+          </p>
+        </section>
+
+        <section className="mt-10 space-y-4 text-[#5a5a5a] leading-relaxed">
+          <h2 className="text-lg font-semibold text-[#3d3d3d]">
             Contact & requests
           </h2>
           <p>
