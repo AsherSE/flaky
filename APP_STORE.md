@@ -85,11 +85,57 @@ Notes for whoever fills this in:
 - **Sign in with Apple** (Guideline 4.8) does not apply. That rule is triggered
   by third-party *social* login; phone + SMS verification is first-party.
 
+## Listing copy
+
+**Subtitle** (30 char limit — 24 used)
+
+> Cancel plans, guilt-free
+
+**Promotional text** (170 chars; editable later without a review)
+
+> Secretly flag that you want to cancel. If they feel the same, you're both
+> off the hook — and nobody ever knows you were the one having second thoughts.
+
+**Keywords** (100 char limit, comma-separated, no spaces after commas — the
+app name is already indexed, so don't repeat it)
+
+> cancel,plans,flake,bail,friends,social,rsvp,calendar,nightin,guiltfree,introvert,excuse
+
+**Description**
+
+> Some plans you want to keep. Some you'd quietly love to get out of — but
+> nobody wants to be the one who cancels.
+>
+> flaky is for the second kind.
+>
+> Pencil in a plan with a friend. If you start having second thoughts, tap
+> flake. Nothing happens. Nobody is told. Your secret is safe.
+>
+> But if everyone in the plan taps flake, the plan is off — and you all find
+> out together. No awkward text, no one who backed out first. Just a quiet
+> night in that everybody secretly wanted.
+>
+> HOW IT WORKS
+>
+> 1. Sign in with your phone number
+> 2. Pencil in a plan — who, what day, and roughly when
+> 3. Send the invite straight to your group chat, or to each person separately
+> 4. Having second thoughts? Tap flake. If everyone does, you're all off the hook
+>
+> WHY IT WORKS
+>
+> Cancelling is rarely about not liking someone. It's about not wanting to be
+> the one who lets them down. flaky takes that away: you never reveal you
+> wanted out unless they wanted out too.
+>
+> Plans disappear after a week. You can delete your account, and everything in
+> it, at any time from inside the app.
+
 ## Store listing
 
 | Field | Value |
 |---|---|
-| Name | flaky |
+| Name | Flaky Meetings |
 | Bundle ID | `app.flaky.ios` |
 | Privacy policy URL | https://flaky.me/privacy |
 | Support URL | **needs deciding — see below** |
