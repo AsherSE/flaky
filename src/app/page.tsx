@@ -17,6 +17,8 @@ import {
   pickPhoneFromContacts,
 } from "@/lib/contact-picker";
 import { composeGroupInvite } from "@/lib/message-composer";
+// TEMPORARY — App Store screenshot capture. Remove with the ?shot code below.
+import { getRandomMessage } from "@/lib/messages";
 import {
   loadContactBookNames,
   withContactBookName,
@@ -118,6 +120,19 @@ function formatParticipantForList(
   if (book) return `${book} · ${masked}`;
   return masked;
 }
+
+/*
+ * TEMPORARY — App Store screenshot capture. Remove all `shotMode` code once the
+ * shots are taken.
+ *
+ *   ?shot=1        show a stand-in name and number in the signed-in header, so
+ *                  a real one never ends up in a public listing
+ *   ?shot=mutual   the same, and jump straight to the mutual-cancel result
+ *
+ * Display only — nothing downstream reads these, and nothing is written.
+ */
+const SHOT_NAME = "John D.";
+const SHOT_PHONE = "+12025550147";
 
 function displayMaskedSelf(
   rawPhone: string,
@@ -553,6 +568,17 @@ export default function Home() {
     setCapacitorIos(isCapacitorIOS());
     setContactBookNames(loadContactBookNames());
   }, []);
+
+  // TEMPORARY — see SHOT_NAME above. Remove after screenshot capture.
+  const [shotMode, setShotMode] = useState<string | null>(null);
+  useEffect(() => {
+    setShotMode(new URLSearchParams(window.location.search).get("shot"));
+  }, []);
+  useEffect(() => {
+    if (shotMode !== "mutual" || !sessionChecked || !token) return;
+    setResult({ type: "cancel", mutual: true, message: getRandomMessage() });
+    setStep("result");
+  }, [shotMode, sessionChecked, token]);
 
   useEffect(() => {
     const stored =
@@ -1140,13 +1166,11 @@ export default function Home() {
             >
               <span className="text-[#8a8a8a]">Signed in as&nbsp;</span>
               <span className="whitespace-normal break-words font-medium text-[#6a6a6a] underline decoration-[#ccc] underline-offset-2 transition-colors group-hover:text-[#e07a5f] group-hover:decoration-[#e07a5f]">
-                {profileName ? (
-                  <>
-                    {profileName}
-                    <span className="font-normal text-[#a3a3a3] group-hover:text-[#e07a5f]/70"> · </span>
-                  </>
+                {shotMode ? SHOT_NAME : profileName ? profileName : null}
+                {shotMode || profileName ? (
+                  <span className="font-normal text-[#a3a3a3] group-hover:text-[#e07a5f]/70"> · </span>
                 ) : null}
-                {displayMaskedSelf(phone, phoneRegion)}
+                {displayMaskedSelf(shotMode ? SHOT_PHONE : phone, phoneRegion)}
               </span>
             </button>
           </div>
