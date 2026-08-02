@@ -30,15 +30,61 @@ function isTimeOfDay(v: unknown): v is MeetingTimeOfDay {
   return typeof v === "string" && TIME_OF_DAY_VALUES.has(v as MeetingTimeOfDay);
 }
 
-/** Calendar "today" for plan dates (YYYY-MM-DD). Defaults to UTC; set FLAKY_PLAN_DATE_TZ (IANA) if needed. */
-function planCalendarTodayYmd(): string {
-  const tz = process.env.FLAKY_PLAN_DATE_TZ?.trim() || "UTC";
+function ymdIn(tz: string): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: tz,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
+}
+
+/**
+ * Calendar "today" for plan dates (YYYY-MM-DD), in the caller's own timezone.
+ *
+ * "Today" is not a server-side fact. At 6pm in Los Angeles it is already
+ * tomorrow in UTC, so validating against a single server timezone rejects the
+ * user's own today — the exact date the UI offers by default. The client sends
+ * its IANA zone; we fall back to FLAKY_PLAN_DATE_TZ, then UTC, for old clients.
+ */
+function planCalendarTodayYmd(clientTz?: unknown): string {
+  const candidates = [
+    typeof clientTz === "string" ? clientTz.trim() : "",
+    process.env.FLAKY_PLAN_DATE_TZ?.trim() || "",
+    "UTC",
+  ];
+  for (const tz of candidates) {
+    if (!tz) continue;
+    try {
+      return ymdIn(tz);
+    } catch {
+      /* not a valid IANA zone — try the next */
+    }
+  }
+  return ymdIn("UTC");
+}
+
+/**
+ * The most recent date that is in the past *everywhere*. Timezones span
+ * UTC-12..UTC+14, so a local date can trail UTC by one day; pruning on UTC's
+ * today would delete plans that are still happening for their owners.
+ */
+function definitelyPastBeforeYmd(): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - 1);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "UTC",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+/** Read the caller's IANA timezone from a request body, if it sent one. */
+function clientTzFromBody(body: unknown): string | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const tz = (body as Record<string, unknown>).tz;
+  return typeof tz === "string" && tz ? tz : undefined;
 }
 
 /** Remove meeting data and drop the key from every participant's index. */
@@ -175,7 +221,9 @@ export async function GET(req: NextRequest) {
   const indexKey = userFlakesIndexKey(myPhone);
   const flakeKeys = await redis.smembers(indexKey);
   const staleKeys: string[] = [];
-  const todayYmd = planCalendarTodayYmd();
+  // Deleting is destructive and GET carries no timezone, so prune only what is
+  // past everywhere. A plan that is still "today" for its owner must survive.
+  const todayYmd = definitelyPastBeforeYmd();
 
   const items = await Promise.all(
     flakeKeys.map(async (flakeKey) => {
@@ -273,7 +321,7 @@ export async function POST(req: NextRequest) {
   if (!DATE_RE.test(date)) {
     return NextResponse.json({ error: "Pick a valid date" }, { status: 400 });
   }
-  if (date < planCalendarTodayYmd()) {
+  if (date < planCalendarTodayYmd(clientTzFromBody(body))) {
     return NextResponse.json(
       { error: "Pick today or a future date" },
       { status: 400 }
@@ -367,8 +415,12 @@ export async function PUT(req: NextRequest) {
   if (result instanceof NextResponse) return result;
   const { sorted, flakeKey, date } = result;
 
-  if (date < planCalendarTodayYmd()) {
-    await pruneFlakeEverywhere(flakeKey, sorted);
+  if (date < planCalendarTodayYmd(clientTzFromBody(body))) {
+    // Participants can sit in different zones, so one person's "past" is not
+    // everyone's — only actually delete once it is past for all of them.
+    if (date < definitelyPastBeforeYmd()) {
+      await pruneFlakeEverywhere(flakeKey, sorted);
+    }
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
@@ -423,8 +475,12 @@ export async function DELETE(req: NextRequest) {
   if (result instanceof NextResponse) return result;
   const { sorted, flakeKey, date } = result;
 
-  if (date < planCalendarTodayYmd()) {
-    await pruneFlakeEverywhere(flakeKey, sorted);
+  if (date < planCalendarTodayYmd(clientTzFromBody(body))) {
+    // Participants can sit in different zones, so one person's "past" is not
+    // everyone's — only actually delete once it is past for all of them.
+    if (date < definitelyPastBeforeYmd()) {
+      await pruneFlakeEverywhere(flakeKey, sorted);
+    }
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

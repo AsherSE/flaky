@@ -32,6 +32,19 @@ function localYmd(d: Date = new Date()): string {
   return `${y}-${m}-${day}`;
 }
 
+/**
+ * The browser's IANA timezone, sent with plan requests. The server can't know
+ * what "today" means for us — at 6pm in Los Angeles it is already tomorrow in
+ * UTC — so it needs our zone to judge whether a date is in the past.
+ */
+function localTimeZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 type Step = "phone" | "code" | "name" | "flake" | "result";
 
 interface SmsFailureDetail {
@@ -893,6 +906,7 @@ export default function Home() {
           date,
           timeOfDay,
           defaultCountry: phoneRegion,
+          tz: localTimeZone(),
         }),
       });
       const data = await res.json();
@@ -1041,7 +1055,7 @@ export default function Home() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ date: item.date, participants }),
+        body: JSON.stringify({ date: item.date, participants, tz: localTimeZone() }),
       });
       const data: { mutual?: boolean; message?: string; error?: string } =
         await res.json().catch(() => ({}));
@@ -1076,7 +1090,7 @@ export default function Home() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ date: item.date, participants }),
+        body: JSON.stringify({ date: item.date, participants, tz: localTimeZone() }),
       });
       const data: { error?: string } = await res.json().catch(() => ({}));
       if (res.status === 409) {
