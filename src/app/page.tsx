@@ -1176,7 +1176,7 @@ export default function Home() {
                 <legend className="text-sm font-medium text-[#5a5a5a]">
                   Your phone number
                 </legend>
-                <div className="mt-1 flex items-end border-b-2 border-[#e0e0e0] focus-within:border-[#e07a5f] transition-colors overflow-hidden">
+                <div className="mt-1 flex items-end transition-colors overflow-hidden">
                   <div className="shrink-0 relative">
                     <select
                       aria-label="Country code"
@@ -1267,7 +1267,7 @@ export default function Home() {
                   onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
                   placeholder="123456"
                   maxLength={6}
-                  className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-2xl text-center tracking-[0.3em] text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
+                  className="mt-1 block w-full px-0 py-2 border-0 focus:ring-0 focus:outline-none text-2xl text-center tracking-[0.3em] text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
                   onKeyDown={(e) =>
                     e.key === "Enter" && !loading && code.length >= 6 && handleVerifyCode()
                   }
@@ -1330,7 +1330,7 @@ export default function Home() {
                   value={onboardingName}
                   onChange={(e) => setOnboardingName(e.target.value)}
                   placeholder="Jane Doe"
-                  className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
+                  className="mt-1 block w-full px-0 py-2 border-0 focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
                 />
               </label>
               <p className="text-xs text-[#a3a3a3] text-center leading-snug">
@@ -1369,7 +1369,7 @@ export default function Home() {
                       autoComplete="name"
                       value={profileDraft}
                       onChange={(e) => setProfileDraft(e.target.value)}
-                      className="mt-1 block w-full px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-base text-[#3d3d3d] bg-transparent"
+                      className="mt-1 block w-full px-0 py-2 border-0 focus:ring-0 focus:outline-none text-base text-[#3d3d3d] bg-transparent"
                     />
                   </label>
                   <p className="text-xs text-[#8a8a8a] leading-relaxed">
@@ -1408,7 +1408,7 @@ export default function Home() {
                       Cancel
                     </button>
                   </div>
-                  <div className="border-t border-[#eee] pt-3">
+                  <div className="pt-3">
                     {confirmingDelete ? (
                       <div className="space-y-3">
                         <p className="text-xs leading-relaxed text-[#5a5a5a]">
@@ -1507,7 +1507,7 @@ export default function Home() {
                               });
                             }}
                             placeholder="Their mobile number"
-                            className="mt-1 block w-full min-w-0 px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
+                            className="mt-1 block w-full min-w-0 px-0 py-2 border-0 focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] placeholder-[#ccc] bg-transparent transition-colors"
                           />
                           {(() => {
                             const rowE164 = normalizePhone(
@@ -1603,7 +1603,7 @@ export default function Home() {
                     min={localYmd()}
                     max={localYmd(new Date(Date.now() + 90 * 86_400_000))}
                     aria-label="Meeting date"
-                    className="min-w-0 flex-1 px-0 py-2 border-0 border-b-2 border-[#e0e0e0] focus:border-[#e07a5f] focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] bg-transparent transition-colors"
+                    className="min-w-0 flex-1 px-0 py-2 border-0 focus:ring-0 focus:outline-none text-lg text-[#3d3d3d] bg-transparent transition-colors"
                   />
                   <div
                     className="flex shrink-0 gap-1"
