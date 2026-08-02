@@ -17,8 +17,6 @@ import {
   pickPhoneFromContacts,
 } from "@/lib/contact-picker";
 import { composeGroupInvite } from "@/lib/message-composer";
-// TEMPORARY — App Store screenshot capture. Remove with the ?shot effect below.
-import { getRandomMessage } from "@/lib/messages";
 import {
   loadContactBookNames,
   withContactBookName,
@@ -555,19 +553,6 @@ export default function Home() {
     setCapacitorIos(isCapacitorIOS());
     setContactBookNames(loadContactBookNames());
   }, []);
-
-  // TEMPORARY — App Store screenshot capture. `?shot=mutual` jumps straight to
-  // the mutual-cancel result so it can be photographed without coordinating two
-  // signed-in devices. Renders the real screen with a real message; requires an
-  // existing session and writes nothing. Remove once the shots are taken.
-  useEffect(() => {
-    if (!sessionChecked || !token) return;
-    if (new URLSearchParams(window.location.search).get("shot") !== "mutual") {
-      return;
-    }
-    setResult({ type: "cancel", mutual: true, message: getRandomMessage() });
-    setStep("result");
-  }, [sessionChecked, token]);
 
   useEffect(() => {
     const stored =
