@@ -194,6 +194,13 @@ export type FlakeTargetAnalysis =
   | { ok: false; error: string };
 
 /**
+ * Most people you can add to one plan, excluding yourself. A plan is a group of
+ * friends, not a mailing list — and without a ceiling one request fans out into
+ * an unbounded number of texts on our Twilio account.
+ */
+export const MAX_FLAKE_TARGETS = 9;
+
+/**
  * Validates flake "who are you meeting" inputs. Uses `selfE164` so own number is rejected
  * even when the API would otherwise see zero valid parses.
  */
@@ -241,6 +248,12 @@ export function analyzeFlakeTargetInput(
   }
 
   const unique = Array.from(new Set(pairs.map((p) => p.e164!)));
+  if (unique.length > MAX_FLAKE_TARGETS) {
+    return {
+      ok: false,
+      error: `Plans can include up to ${MAX_FLAKE_TARGETS + 1} people.`,
+    };
+  }
   return { ok: true, targetsE164: unique };
 }
 

@@ -8,6 +8,7 @@ import {
 import { getRandomMessage } from "@/lib/messages";
 import { sendSMS } from "@/lib/twilio";
 import { profileKey } from "@/lib/profile";
+import { rateLimit, rateLimitError } from "@/lib/rate-limit";
 import { createMeetingRecord } from "@/lib/meeting";
 import {
   DATE_RE,
@@ -326,6 +327,13 @@ export async function POST(req: NextRequest) {
       { error: "Pick today or a future date" },
       { status: 400 }
     );
+  }
+
+  // Creating plans is cheap for the caller and not for us: each one writes a
+  // meeting record plus an index entry per participant.
+  const pencilOk = await rateLimit(`rl:pencil:${myPhone}`, 20, 3600);
+  if (!pencilOk) {
+    return NextResponse.json(rateLimitError(600), { status: 429 });
   }
 
   const region = resolvePhoneRegion(

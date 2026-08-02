@@ -2,8 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
 import { sendSMS, twilioSendErrorInfo } from "@/lib/twilio";
 import { getMeetingRecord } from "@/lib/meeting";
+import { consumeQuota, rateLimit, rateLimitError } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
+
+const DAY_SEC = 24 * 60 * 60;
+const SEVEN_DAYS_SEC = 7 * DAY_SEC;
+
+/**
+ * Texts one person may send in a day, across every plan. A plan tops out at 10
+ * people, so this is a handful of invites a day — far above real use, far below
+ * anything that would get our Twilio number filtered.
+ */
+const SMS_PER_DAY = 30;
+
+/** Sends per meeting. Two, so a failed send can be retried once, and no more. */
+const SENDS_PER_MEETING = 2;
 
 /**
  * POST — "Send individually": text each other participant their own invite via
@@ -49,6 +63,38 @@ export async function POST(req: NextRequest) {
   const targets = meeting.participants.filter((p) => p !== myPhone);
   if (targets.length === 0) {
     return NextResponse.json({ sent: 0, smsFailures: undefined });
+  }
+
+  // Two gates, because they stop different things. The per-meeting one stops
+  // the same people being texted again on every tap of "Send individually";
+  // the daily budget stops many small plans adding up to a spam run.
+  const meetingOk = await rateLimit(
+    `rl:notify:${meetingId}`,
+    SENDS_PER_MEETING,
+    SEVEN_DAYS_SEC
+  );
+  if (!meetingOk) {
+    return NextResponse.json(
+      { error: "Everyone in this plan has already been texted." },
+      { status: 429 }
+    );
+  }
+
+  const budgetOk = await consumeQuota(
+    `rl:sms:${myPhone}`,
+    targets.length,
+    SMS_PER_DAY,
+    DAY_SEC
+  );
+  if (!budgetOk) {
+    return NextResponse.json(
+      {
+        error:
+          "You've sent a lot of invites today. Try again tomorrow, or share the link instead.",
+        retryAfter: DAY_SEC,
+      },
+      { status: 429 }
+    );
   }
 
   const smsBody = `flaky: ${meeting.creator} penciled you in for plans on ${meeting.date}. See plans: https://flaky.me/m/${meetingId}\n\nReply STOP to opt out, HELP for help. Msg & data rates may apply.`;

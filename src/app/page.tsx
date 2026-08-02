@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   analyzeFlakeTargetInput,
+  MAX_FLAKE_TARGETS,
   normalizePhone,
   regionFromE164,
   inferPhoneRegionFromNavigator,
@@ -1469,8 +1470,12 @@ export default function Home() {
                   </span>
                   <button
                     type="button"
-                    disabled={loading}
-                    onClick={() => setTargetPhones((prev) => [...prev, ""])}
+                    disabled={loading || targetPhones.length >= MAX_FLAKE_TARGETS}
+                    onClick={() =>
+                      setTargetPhones((prev) =>
+                        prev.length >= MAX_FLAKE_TARGETS ? prev : [...prev, ""]
+                      )
+                    }
                     className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[#81b29a] text-[#5a7d6c] hover:bg-[#e8f2ec] active:bg-[#dceee4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     aria-label="Add another number"
                   >
