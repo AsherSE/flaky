@@ -105,6 +105,37 @@ Screenshots: iPhone only now that the target is `TARGETED_DEVICE_FAMILY = 1`, so
 no iPad set is needed. App Store Connect states the exact required sizes on the
 upload screen — check there rather than trusting a stale list.
 
+## TestFlight first
+
+Worth doing a limited rollout before the public release. Same binary, same
+upload — TestFlight and the App Store are two destinations for one build, so
+nothing is wasted if you promote it later.
+
+**Internal testers** (up to 100, must be on your App Store Connect team) need no
+review at all. The build is available within minutes of processing. This is the
+fastest way to get flaky onto a few real phones.
+
+**External testers** (up to 10,000, invited by email or public link) require
+**Beta App Review**. It is lighter than full App Store review and usually turns
+around inside a day, but it checks the same things that matter here — so the
+demo accounts above still need to work, and the review notes still need filling
+in. Everything in this document applies.
+
+What to fill in under TestFlight → Test Information:
+
+- **What to Test** — steer people at the mechanic, because it is not obvious
+  from the outside: pencil in a real plan with a friend, both tap flake, see
+  what happens. Ask them specifically whether the invite SMS arrived and
+  whether "Send to group" opened Messages with the right people.
+- **Feedback email** — `feedback@flaky.me`.
+- Enable **automatic screenshot and feedback capture** in TestFlight; testers
+  can then shake to report, which is far more likely to reach you than email.
+
+Two practical notes. Builds expire after **90 days**, so a slow beta needs
+re-uploading. And your Twilio spend scales with testers — the 30-texts-per-day
+budget is per person, so twenty testers is a plausible 600 texts a day. Watch
+the Twilio console during the first week.
+
 ## Before each upload
 
 - `CURRENT_PROJECT_VERSION` must increase for every build uploaded, even a
