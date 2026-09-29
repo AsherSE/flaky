@@ -18,6 +18,7 @@ import {
   pickPhoneFromContacts,
 } from "@/lib/contact-picker";
 import { composeGroupInvite } from "@/lib/message-composer";
+import { syncNativeSession } from "@/lib/native-session";
 import {
   loadContactBookNames,
   withContactBookName,
@@ -54,14 +55,14 @@ interface SmsFailureDetail {
 }
 
 interface FlakeResult {
-  type: "penciled" | "cancel";
+  type: "penciled" | "cancel" | "joined";
   mutual: boolean;
   message: string;
   smsFailures?: SmsFailureDetail[];
   /** Shareable invite link for this meeting (/m/<id>), when available. */
   inviteUrl?: string;
-  /** Stable meeting id, for the "Send individually" (Twilio) action. */
-  meetingId?: string;
+  /** Plan id, for the "Send individually" (Twilio) action. */
+  planId?: string;
   /** The penciled-in date (YYYY-MM-DD), for the group-chat invite body. */
   date?: string;
   /** Other participants' E.164 numbers, to pre-fill the Messages composer. */
@@ -81,6 +82,8 @@ function isTimeOfDay(v: unknown): v is MeetingTimeOfDay {
 }
 
 interface MyCancellationItem {
+  id: string;
+  inviteUrl?: string;
   date: string;
   participants?: string[];
   flakedParticipants?: string[];
@@ -99,6 +102,12 @@ function formatPlanDate(ymd: string): string {
     day: "numeric",
     year: "numeric",
   });
+}
+
+/** The text that goes out with an invite link, in a chat or a share sheet. */
+function inviteMessage(ymd: string | undefined, url: string): string {
+  const when = ymd ? formatPlanDate(ymd) : "soon";
+  return `I penciled us in for plans on ${when} 📝 Tap to join — and if anyone secretly wants to bail, you can flake guilt-free:\n${url}`;
 }
 
 function maskParticipantPhone(participantE164: string): string {
@@ -256,12 +265,17 @@ function CancelProgressPie({
       className="shrink-0 rounded-full border border-[#c9c4bc] shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] h-[calc(2.75rem*2/3)] w-[calc(2.75rem*2/3)]"
       style={{ background }}
       role="img"
-      aria-label={pieAriaLabel({ date: "", cancelledCount, totalPeople, mutual: totalPeople > 0 && cancelledCount >= totalPeople })}
+      aria-label={pieAriaLabel({ id: "", date: "", cancelledCount, totalPeople, mutual: totalPeople > 0 && cancelledCount >= totalPeople })}
     />
   );
 }
 
 const TOKEN_KEY = "flaky-token";
+/**
+ * Plan id from an invite link (`/?join=<id>`), held across sign-in. Stored so
+ * it survives the verify-code round trip and a reload in between.
+ */
+const PENDING_JOIN_KEY = "flaky-pending-join";
 /** Remember “skip for now” so we don’t block returning users who chose not to set a name. */
 const SKIP_NAME_KEY = "flaky-skip-name";
 
@@ -561,12 +575,38 @@ export default function Home() {
   const [resendCooldown, setResendCooldown] = useState(0);
   const [selectedCalendarYmd, setSelectedCalendarYmd] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [pendingJoin, setPendingJoin] = useState<string | null>(null);
+  const [canWebShare, setCanWebShare] = useState(false);
+  const [copiedPlanId, setCopiedPlanId] = useState<string | null>(null);
 
   useEffect(() => {
     setPhoneRegion(inferPhoneRegionFromNavigator());
     setCapacitorIos(isCapacitorIOS());
     setContactBookNames(loadContactBookNames());
+    setCanWebShare(typeof navigator !== "undefined" && !!navigator.share);
+
+    // Arriving from an invite link: remember the plan, then tidy the URL so a
+    // reload doesn't look like a fresh invite.
+    try {
+      const url = new URL(window.location.href);
+      const joinId = url.searchParams.get("join");
+      if (joinId && /^[0-9A-Za-z]{1,32}$/.test(joinId)) {
+        window.localStorage.setItem(PENDING_JOIN_KEY, joinId);
+        url.searchParams.delete("join");
+        window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+      }
+      setPendingJoin(window.localStorage.getItem(PENDING_JOIN_KEY));
+    } catch {
+      /* storage unavailable — joining just won't survive sign-in */
+    }
   }, []);
+
+  // The iMessage extension can't see the web view's storage, so mirror the
+  // session into the shared keychain whenever it changes.
+  useEffect(() => {
+    if (!sessionChecked) return;
+    void syncNativeSession(token);
+  }, [token, sessionChecked]);
 
   useEffect(() => {
     const stored =
@@ -629,6 +669,7 @@ export default function Home() {
       setMyCancellations(
         rawItems.map((item) => ({
           ...item,
+          id: typeof item.id === "string" ? item.id : "",
           participants: Array.isArray(item.participants)
             ? item.participants
             : [],
@@ -657,6 +698,60 @@ export default function Home() {
       cancelled = true;
     };
   }, [token, step]);
+
+  // Join a plan from an invite link once signed in and past onboarding.
+  useEffect(() => {
+    if (!token || !pendingJoin || (step !== "flake" && step !== "result")) {
+      return;
+    }
+    const id = pendingJoin;
+    setPendingJoin(null);
+    try {
+      window.localStorage.removeItem(PENDING_JOIN_KEY);
+    } catch {
+      /* ignore */
+    }
+    void (async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const res = await fetch("/api/flake/join", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ id }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (res.status === 401) signOut();
+          throw new Error(
+            typeof data.error === "string" ? data.error : "Couldn’t join that plan"
+          );
+        }
+        const joinedDate = typeof data.date === "string" ? data.date : undefined;
+        const creator = typeof data.creator === "string" ? data.creator : "";
+        const when = joinedDate ? formatPlanDate(joinedDate) : "the day";
+        setResult({
+          type: "joined",
+          mutual: false,
+          message:
+            data.status === "already"
+              ? `You’re already in the plan for ${when}.`
+              : `Plans${creator && creator !== "Someone" ? ` with ${creator}` : ""} on ${when}. If you secretly want out, tap flake — nobody finds out unless everyone does.`,
+          date: joinedDate,
+        });
+        setStep("result");
+        if (joinedDate) setSelectedCalendarYmd(joinedDate);
+        void refreshCancellations(token);
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : "Something went wrong");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [token, step, pendingJoin]);
 
   // Default-select the next upcoming meeting once events load.
   useEffect(() => {
@@ -856,16 +951,21 @@ export default function Home() {
 
   const handlePencilIn = async () => {
     setError("");
-    if (!targetPhones.some((t) => t.trim())) return;
-    const self = normalizePhone(phone, phoneRegion);
-    const flakeCheck = analyzeFlakeTargetInput(
-      targetPhones,
-      phoneRegion,
-      self
-    );
-    if (!flakeCheck.ok) {
-      setError(flakeCheck.error);
-      return;
+    // Numbers are optional: with none, the plan is shared by link and people
+    // add themselves.
+    let recipients: string[] = [];
+    if (targetPhones.some((t) => t.trim())) {
+      const self = normalizePhone(phone, phoneRegion);
+      const flakeCheck = analyzeFlakeTargetInput(
+        targetPhones,
+        phoneRegion,
+        self
+      );
+      if (!flakeCheck.ok) {
+        setError(flakeCheck.error);
+        return;
+      }
+      recipients = flakeCheck.targetsE164;
     }
 
     setLoading(true);
@@ -891,16 +991,15 @@ export default function Home() {
       }
       const inviteUrl =
         typeof data.inviteUrl === "string" ? data.inviteUrl : undefined;
-      const meetingId =
-        typeof data.meetingId === "string" ? data.meetingId : undefined;
+      const planId = typeof data.id === "string" ? data.id : undefined;
       const pencilResult: FlakeResult = {
         type: "penciled",
         mutual: false,
         message: "",
         inviteUrl,
-        meetingId,
+        planId,
         date,
-        recipients: flakeCheck.targetsE164,
+        recipients,
       };
       setResult(pencilResult);
       setStep("result");
@@ -916,15 +1015,14 @@ export default function Home() {
   };
 
   const handleSendInGroupChat = async (r: FlakeResult) => {
-    if (!r.inviteUrl || !r.recipients || r.recipients.length === 0) return;
+    if (!r.inviteUrl) return;
     setComposerBusy(true);
     setError("");
     try {
-      const when = r.date ? formatPlanDate(r.date) : "soon";
-      const body = `I penciled us in for plans on ${when} 📝 — if anyone secretly wants to bail, you can flake guilt-free here: ${r.inviteUrl}`;
+      // With no numbers the composer opens empty and you pick the chat.
       const outcome = await composeGroupInvite({
-        body,
-        recipients: r.recipients,
+        body: inviteMessage(r.date, r.inviteUrl),
+        recipients: r.recipients ?? [],
       });
       if (outcome === "failed") {
         setError(
@@ -933,6 +1031,39 @@ export default function Home() {
       }
     } finally {
       setComposerBusy(false);
+    }
+  };
+
+  const handleShareLink = async (url: string, planDate?: string) => {
+    setError("");
+    try {
+      await navigator.share({ text: inviteMessage(planDate, url) });
+    } catch {
+      /* dismissed the share sheet */
+    }
+  };
+
+  /** Invite more people to an existing plan from the calendar. */
+  const handleInviteMore = async (item: MyCancellationItem) => {
+    if (!item.inviteUrl) return;
+    if (capacitorIos) {
+      await handleSendInGroupChat({
+        type: "penciled",
+        mutual: false,
+        message: "",
+        inviteUrl: item.inviteUrl,
+        date: item.date,
+      });
+    } else if (canWebShare) {
+      await handleShareLink(item.inviteUrl, item.date);
+    } else {
+      try {
+        await navigator.clipboard.writeText(item.inviteUrl);
+        setCopiedPlanId(item.id);
+        window.setTimeout(() => setCopiedPlanId(null), 2000);
+      } catch {
+        setError("Couldn’t copy the link.");
+      }
     }
   };
 
@@ -949,7 +1080,7 @@ export default function Home() {
   };
 
   const handleSendIndividually = async (r: FlakeResult) => {
-    if (!r.meetingId || !token) return;
+    if (!r.planId || !token) return;
     setNotifyBusy(true);
     setError("");
     try {
@@ -959,7 +1090,7 @@ export default function Home() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ meetingId: r.meetingId }),
+        body: JSON.stringify({ id: r.planId }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1014,12 +1145,11 @@ export default function Home() {
   };
 
   function myCancellationRowKey(item: MyCancellationItem) {
-    return `${item.date}:${(item.participants ?? []).join("|")}`;
+    return item.id;
   }
 
   const handleOptToCancel = async (item: MyCancellationItem) => {
-    const participants = item.participants ?? [];
-    if (!token || participants.length < 2) return;
+    if (!token || !item.id) return;
     const rowKey = myCancellationRowKey(item);
     setUndoingFlakeKey(rowKey);
     setError("");
@@ -1030,7 +1160,7 @@ export default function Home() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ date: item.date, participants, tz: localTimeZone() }),
+        body: JSON.stringify({ id: item.id, tz: localTimeZone() }),
       });
       const data: { mutual?: boolean; message?: string; error?: string } =
         await res.json().catch(() => ({}));
@@ -1053,8 +1183,7 @@ export default function Home() {
   };
 
   const handleUndoCancel = async (item: MyCancellationItem) => {
-    const participants = item.participants ?? [];
-    if (!token || participants.length < 2) return;
+    if (!token || !item.id) return;
     const rowKey = myCancellationRowKey(item);
     setUndoingFlakeKey(rowKey);
     setError("");
@@ -1065,7 +1194,7 @@ export default function Home() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ date: item.date, participants, tz: localTimeZone() }),
+        body: JSON.stringify({ id: item.id, tz: localTimeZone() }),
       });
       const data: { error?: string } = await res.json().catch(() => ({}));
       if (res.status === 409) {
@@ -1187,6 +1316,11 @@ export default function Home() {
                 if (phone.trim()) void handleSendCode();
               }}
             >
+              {pendingJoin ? (
+                <p className="rounded-lg bg-[#fef6f4] px-3 py-2 text-sm text-[#8a4a3a] text-center">
+                  Verify your number to join the plan you were invited to.
+                </p>
+              ) : null}
               <fieldset>
                 <legend className="text-sm font-medium text-[#5a5a5a]">
                   Your phone number
@@ -1427,9 +1561,9 @@ export default function Home() {
                     {confirmingDelete ? (
                       <div className="space-y-3">
                         <p className="text-xs leading-relaxed text-[#5a5a5a]">
-                          This deletes your account, your name, and every plan
-                          you&rsquo;re part of — for everyone in them. It
-                          can&rsquo;t be undone.
+                          This deletes your account and your name, and takes
+                          you out of every plan you&rsquo;re in. Everyone else
+                          keeps their plans. It can&rsquo;t be undone.
                         </p>
                         <div className="flex gap-2">
                           <button
@@ -1466,7 +1600,10 @@ export default function Home() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-medium text-[#5a5a5a]">
-                    Who are you meeting?
+                    Who are you meeting?{" "}
+                    <span className="font-normal text-[#a3a3a3]">
+                      (optional)
+                    </span>
                   </span>
                   <button
                     type="button"
@@ -1657,20 +1794,16 @@ export default function Home() {
               </div>
               <button
                 onClick={handlePencilIn}
-                disabled={
-                  loading ||
-                  !date ||
-                  !targetPhones.some((t) => t.trim().length > 0)
-                }
+                disabled={loading || !date}
                 className="w-full py-3 bg-[#e07a5f] text-white rounded-xl font-medium hover:bg-[#d06a4f] active:bg-[#c05a3f] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {loading ? "..." : "Pencil in"}
               </button>
               <p className="text-xs text-[#a3a3a3] text-center leading-snug">
-                By tapping Pencil in, you confirm you have permission to
-                text this person about plans you have together. You choose
-                how to invite them next; any SMS lets them reply STOP to opt
-                out.
+                You&apos;ll get an invite link — anyone you share it with can
+                join. If you add numbers, you confirm you have permission to
+                text them about plans you have together; any SMS lets them
+                reply STOP to opt out.
               </p>
             </div>
           ) : step === "result" && result ? (
@@ -1686,7 +1819,7 @@ export default function Home() {
                   <p className="text-[#6a6a6a] leading-relaxed">
                     {result.message
                       ? result.message
-                      : "Now send them the invite. If anyone secretly wants out, they can tap flake."}
+                      : "Now send the invite. Anyone who opens the link joins the plan — and if they secretly want out, they can tap flake."}
                   </p>
                   {result.smsFailures && result.smsFailures.length > 0 ? (
                     <div className="rounded-lg border border-[#eee] bg-[#fafaf9] px-3 py-2 text-left text-xs text-[#6a6a6a] space-y-2">
@@ -1725,15 +1858,23 @@ export default function Home() {
                   ) : null}
                   {result.inviteUrl ? (
                     <div className="space-y-2 pt-1">
-                      {capacitorIos &&
-                      result.recipients &&
-                      result.recipients.length > 0 ? (
+                      {capacitorIos ? (
                         <button
                           onClick={() => handleSendInGroupChat(result)}
                           disabled={composerBusy}
                           className="w-full py-3 bg-[#e07a5f] text-white rounded-xl font-medium hover:bg-[#d06a4f] active:bg-[#c05a3f] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
                           {composerBusy ? "..." : "Send to group"}
+                        </button>
+                      ) : null}
+                      {canWebShare && !capacitorIos ? (
+                        <button
+                          onClick={() =>
+                            handleShareLink(result.inviteUrl!, result.date)
+                          }
+                          className="w-full py-3 bg-[#e07a5f] text-white rounded-xl font-medium hover:bg-[#d06a4f] active:bg-[#c05a3f] transition-colors"
+                        >
+                          Share invite
                         </button>
                       ) : null}
                       <button
@@ -1753,6 +1894,18 @@ export default function Home() {
                       ) : null}
                     </div>
                   ) : null}
+                </>
+              ) : result.type === "joined" ? (
+                <>
+                  <div className="text-5xl" aria-hidden="true">
+                    🙌
+                  </div>
+                  <h2 className="text-xl font-bold text-[#3d3d3d]">
+                    You&apos;re in!
+                  </h2>
+                  <p className="text-[#6a6a6a] leading-relaxed">
+                    {result.message}
+                  </p>
                 </>
               ) : result.mutual ? (
                 <>
@@ -1864,6 +2017,17 @@ export default function Home() {
                                 )
                                 .join(" · ")}
                             </p>
+                            {!item.mutual && item.inviteUrl ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleInviteMore(item)}
+                                className="mt-1 text-xs text-[#8a8a8a] underline decoration-[#ccc] underline-offset-2 hover:text-[#e07a5f] hover:decoration-[#e07a5f]"
+                              >
+                                {copiedPlanId === item.id
+                                  ? "Link copied"
+                                  : "Invite more people"}
+                              </button>
+                            ) : null}
                           </div>
                           {!item.mutual && !selfCancelled && (
                             <button

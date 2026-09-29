@@ -4,59 +4,14 @@ Roadmap after the first App Store submission. The order matters: the data model
 change unblocks almost everything else, so it comes first even though it is the
 least visible.
 
-## 1. Give a plan an identity of its own
+## 1. ~~Give a plan an identity of its own~~ — done
 
-Today a plan *is* its participants and date, spelled out in the Redis key:
+Plans are now `plan:{id}` records with growable participant sets (see
+`src/lib/plan.ts`), and invite links (`/m/<id>`) let anyone join. Old-shape
+keys are migrated lazily by `src/lib/legacy-plans.ts`; every legacy key has
+expired by 2026-10-08, so delete that file and its two call sites after then.
 
-```
-flake:+15551230000:+15554560000:2026-08-15
-```
-
-Everything awkward about the app traces back to that one decision.
-
-- **You cannot add anyone to an existing plan.** A different participant set is
-  a different key, so "add Sam" silently means "make a second, unrelated plan".
-- **You cannot reschedule.** Changing the date changes the identity, which is
-  why the reschedule idea below has nowhere to live right now.
-- **You cannot remove one person's data without destroying the plan.** This came
-  up building account deletion: participant numbers are baked into the key, so
-  there is no way to strip someone out without rewriting it. Deleting your
-  account currently deletes the plans you were in, for everyone in them. That is
-  defensible but it is not what anyone would choose.
-- **Phone numbers are smeared across key names**, so purging personal data means
-  finding keys by their name rather than reading a record.
-- `meeting:{id}` records were added later for invite links, so the same plan is
-  now described in two places that can disagree.
-
-### The shape to move to
-
-One record, keyed by an opaque id, and one index per user pointing at it:
-
-```
-meeting:{id}          { id, date, timeOfDay, createdBy, createdAt,
-                        participants: [...E.164], flaked: [...E.164] }
-userMeetings:{phone}  set of meeting ids
-```
-
-Two key types instead of the current five (`flake:`, `flakeMeta:`,
-`userFlakes:`, `meeting:`, `userMeetings:`). Then:
-
-- **Adding someone** appends to `participants` and adds the id to their index.
-  The plan keeps its identity, and the invite link keeps working.
-- **Rescheduling** is a field write.
-- **Account deletion** removes you from `participants` and `flaked`, and only
-  deletes the meeting when it drops below two people. Other people keep their
-  plans.
-- **Nothing personal appears in a key name.**
-- **Invite links stop being a parallel structure** and become the primary way a
-  plan is addressed, which is what they already are in the UI.
-
-### Migration is nearly free
-
-Plans expire after 7 days. Ship the new model, keep reading the old keys for a
-week, then delete that code. No backfill, no dual-write window beyond the TTL.
-This is the one moment where the short TTL is an asset — worth using it before
-the app has enough users to make a migration painful.
+Reschedule (below) is now just a field write on `plan:{id}`.
 
 ## 2. Push notifications instead of SMS, where possible
 

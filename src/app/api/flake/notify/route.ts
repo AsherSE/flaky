@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { redis } from "@/lib/redis";
 import { sendSMS, twilioSendErrorInfo } from "@/lib/twilio";
-import { getMeetingRecord } from "@/lib/meeting";
+import { getPlan } from "@/lib/plan";
+import { inviteUrl } from "@/lib/invite";
+import { sessionPhone } from "@/lib/auth";
 import { consumeQuota, rateLimit, rateLimitError } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -25,16 +26,8 @@ const SENDS_PER_MEETING = 2;
  * a group chat from the result screen, so we never auto-text on pencil-in.
  */
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get("authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const sessionToken = authHeader.slice(7);
-  const myPhone = await redis.get<string>(`session:${sessionToken}`);
-  if (!myPhone) {
-    return NextResponse.json({ error: "Session expired" }, { status: 401 });
-  }
+  const myPhone = await sessionPhone(req);
+  if (myPhone instanceof NextResponse) return myPhone;
 
   let body: unknown;
   try {
@@ -45,13 +38,13 @@ export async function POST(req: NextRequest) {
 
   const meetingId =
     body && typeof body === "object"
-      ? (body as Record<string, unknown>).meetingId
+      ? (body as Record<string, unknown>).id
       : undefined;
   if (typeof meetingId !== "string" || !meetingId) {
-    return NextResponse.json({ error: "Missing meetingId" }, { status: 400 });
+    return NextResponse.json({ error: "Missing id" }, { status: 400 });
   }
 
-  const meeting = await getMeetingRecord(meetingId);
+  const meeting = await getPlan(meetingId);
   if (!meeting) {
     return NextResponse.json({ error: "Meeting not found" }, { status: 404 });
   }
@@ -97,7 +90,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const smsBody = `flaky: ${meeting.creator} penciled you in for plans on ${meeting.date}. See plans: https://flaky.me/m/${meetingId}\n\nReply STOP to opt out, HELP for help. Msg & data rates may apply.`;
+  const smsBody = `flaky: ${meeting.creator} penciled you in for plans on ${meeting.date}. See plans: ${inviteUrl(meetingId)}\n\nReply STOP to opt out, HELP for help. Msg & data rates may apply.`;
 
   const smsResults = await Promise.all(
     targets.map(async (to) => {

@@ -41,6 +41,24 @@ The `cap:dev` script sets `CAPACITOR_SERVER_URL=http://localhost:3000` so the
 WebView loads your local server. Make sure your Mac and device/simulator can
 reach `localhost:3000`.
 
+## iMessage extension
+
+`FlakyMessages/` is a Messages app extension: pick a day in the Messages app
+drawer and it drops an invite link into the chat. It pencils plans in as
+whoever is signed in to the main app — the web view hands its session token to
+native code (`SharedSessionPlugin`), which stores it in a keychain group both
+targets share (`Shared/SharedSession.swift`).
+
+It talks to `FLAKY_SERVER_URL` (a build setting, `https://flaky.me` by default).
+To point it at a local server in the simulator:
+
+```bash
+xcodebuild -scheme App -destination 'platform=iOS Simulator,name=iPhone 17 Pro' FLAKY_SERVER_URL=http://localhost:3000 build
+```
+
+Invite links open the app directly (universal links, `applinks:flaky.me`),
+served from `src/app/.well-known/apple-app-site-association`.
+
 ## App Store / TestFlight
 
 1. In Xcode, set your **Team** and **Bundle Identifier** under *Signing & Capabilities*.

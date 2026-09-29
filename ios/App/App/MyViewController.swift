@@ -8,5 +8,6 @@ class MyViewController: CAPBridgeViewController {
         // to nothing, compose() throws, and "Send to group" reports that it
         // couldn't open Messages — on every device, not just the simulator.
         bridge?.registerPluginInstance(MessageComposerPlugin())
+        bridge?.registerPluginInstance(SharedSessionPlugin())
     }
 }
