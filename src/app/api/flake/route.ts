@@ -146,13 +146,14 @@ export async function GET(req: NextRequest) {
 
   const items = plans
     .filter((p): p is NonNullable<typeof p> => p != null)
+    // Never send who else has flaked, or how many: the whole promise is that
+    // nobody finds out unless everyone does. You only learn about yourself.
     .map((p) => ({
       id: p.id,
       date: p.date,
       participants: p.participants,
-      flakedParticipants: p.flaked,
       totalPeople: p.participants.length,
-      cancelledCount: p.flaked.length,
+      youFlaked: p.flaked.includes(myPhone),
       mutual: p.mutual,
       timeOfDay: p.timeOfDay,
       inviteUrl: inviteUrl(p.id),

@@ -86,9 +86,9 @@ interface MyCancellationItem {
   inviteUrl?: string;
   date: string;
   participants?: string[];
-  flakedParticipants?: string[];
   totalPeople: number;
-  cancelledCount: number;
+  /** Whether you've flaked. Nobody learns who else has — that's the point. */
+  youFlaked: boolean;
   mutual: boolean;
   timeOfDay?: MeetingTimeOfDay | null;
 }
@@ -151,122 +151,45 @@ function displayMaskedSelf(
   return rawPhone.trim() || "—";
 }
 
-function meetingStatusText(item: MyCancellationItem, selfCancelled: boolean): string {
+function meetingStatusText(item: MyCancellationItem): string {
   if (item.mutual) return "Everyone wanted out — you\u2019re covered";
-  if (item.cancelledCount === 0) return "Meeting penciled in";
-  if (selfCancelled) {
-    if (item.cancelledCount <= 1) return "You want to cancel";
-    return `You and ${item.cancelledCount - 1} more want to cancel`;
-  }
-  return `${item.cancelledCount} of ${item.totalPeople} want to cancel`;
+  if (item.youFlaked) return "You want out — your secret\u2019s safe";
+  return "Penciled in";
 }
 
-function pieAriaLabel(item: MyCancellationItem): string {
-  if (item.mutual) return "Cancelled — everyone wanted out";
-  if (item.cancelledCount === 0) return "No one wants to cancel yet";
-  return `${item.cancelledCount} of ${item.totalPeople} want to cancel`;
-}
-
-const PIE_MEETING_GREY = "#3d3d3d";
-
-function fnv1a32(s: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-/** Pastel, Japanese-adjacent palette — stable pick per E.164 (identicon-style). */
-const PASTEL_JP_SLICE_COLORS = [
-  "#f2b5c4", // sakura rose
-  "#b8d6eb", // 空色 soft sky
-  "#c8e6d4", // 若葉 mint
-  "#e5d0ef", // 藤 wisteria mist
-  "#fce8b8", // 生成り kinari gold
-  "#f0c4a8", // 桃饅頭 peach
-  "#a8c8e8", // 浅葱 asagi
-  "#dce8c4", // 若竹 young bamboo
-  "#f0c8c8", // 桜貝 shell pink
-  "#cad4f2", // 桔梗 pale indigo
-  "#f2d8c8", // 砥粉色 shell terracotta
-  "#b8e0d8", // 青磁 celadon whisper
-  "#f5e8a8", // 淡黄 narcissus
-  "#d8cce8", // 薄藤 pale wisteria
-  "#c8e0e8", // 水浅葱 mist teal
-  "#f0c8dc", // 撫子 blush
-] as const;
-
-function identiconColorFromPhone(e164: string): string {
-  const h = fnv1a32(e164);
-  return PASTEL_JP_SLICE_COLORS[h % PASTEL_JP_SLICE_COLORS.length]!;
-}
-
-/** You first, then everyone else in stable order (counter-clockwise after the first slice). */
-function participantsPieOrder(
-  participants: string[],
-  selfE164: string | null
-): string[] {
-  const sorted = [...participants].sort((a, b) => a.localeCompare(b));
-  if (!selfE164 || !sorted.includes(selfE164)) return sorted;
-  return [selfE164, ...sorted.filter((p) => p !== selfE164)];
-}
-
-function cancellationPieConicGradient(
-  participants: string[],
-  flaked: Set<string>,
-  selfE164: string | null
-): string {
-  const ordered = participantsPieOrder(participants, selfE164);
-  const n = ordered.length;
-  if (n === 0) return PIE_MEETING_GREY;
-  const stops: string[] = [];
-  for (let i = 0; i < n; i++) {
-    const p = ordered[i]!;
-    const start = (i / n) * 100;
-    const end = ((i + 1) / n) * 100;
-    const color = flaked.has(p) ? identiconColorFromPhone(p) : PIE_MEETING_GREY;
-    stops.push(`${color} ${start}% ${end}%`);
-  }
-  return `conic-gradient(from 0deg, ${stops.join(", ")})`;
-}
-
-function CancelProgressPie({
-  participants,
-  flakedParticipants,
-  cancelledCount,
-  totalPeople,
-  selfE164,
-}: {
-  participants?: string[];
-  flakedParticipants?: string[];
-  cancelledCount: number;
-  totalPeople: number;
-  selfE164: string | null;
-}) {
-  const safeTotal = Math.max(1, totalPeople);
-  const pct = Math.min(100, Math.round((cancelledCount / safeTotal) * 100));
-  const parts = Array.isArray(participants) ? participants : [];
-  const flakedList = Array.isArray(flakedParticipants) ? flakedParticipants : [];
-  const flakedSet = new Set(flakedList);
-  const canSlice =
-    parts.length === safeTotal &&
-    parts.length > 0 &&
-    flakedList.length === cancelledCount &&
-    flakedSet.size === cancelledCount;
-
-  const background = canSlice
-    ? cancellationPieConicGradient(parts, flakedSet, selfE164)
-    : `conic-gradient(from 0deg, ${PIE_MEETING_GREY} 0% ${100 - pct}%, #e07a5f ${100 - pct}% 100%)`;
-
+/** Plan marker: its time of day, or a plain calendar when none was picked. */
+function PlanBadge({ item }: { item: MyCancellationItem }) {
+  const tone = item.mutual
+    ? "border-[#b8d4c4] bg-[#f0f8f4] text-[#5a7d6c]"
+    : "border-[#e0dbd3] bg-white text-[#8a8a8a]";
   return (
     <div
-      className="shrink-0 rounded-full border border-[#c9c4bc] shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] h-[calc(2.75rem*2/3)] w-[calc(2.75rem*2/3)]"
-      style={{ background }}
+      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${tone}`}
       role="img"
-      aria-label={pieAriaLabel({ id: "", date: "", cancelledCount, totalPeople, mutual: totalPeople > 0 && cancelledCount >= totalPeople })}
-    />
+      aria-label={
+        item.timeOfDay ? TIME_OF_DAY_LABELS[item.timeOfDay] : "Plan"
+      }
+    >
+      {item.timeOfDay ? (
+        <TimeOfDayIcon kind={item.timeOfDay} className="h-5 w-5" />
+      ) : (
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.75"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="h-5 w-5"
+          aria-hidden
+        >
+          <rect x="3.5" y="5" width="17" height="15" rx="2" />
+          <path d="M3.5 10h17" />
+          <path d="M8 3v4" />
+          <path d="M16 3v4" />
+        </svg>
+      )}
+    </div>
   );
 }
 
@@ -673,9 +596,7 @@ export default function Home() {
           participants: Array.isArray(item.participants)
             ? item.participants
             : [],
-          flakedParticipants: Array.isArray(item.flakedParticipants)
-            ? item.flakedParticipants
-            : [],
+          youFlaked: item.youFlaked === true,
           timeOfDay: isTimeOfDay(item.timeOfDay) ? item.timeOfDay : null,
         }))
       );
@@ -1969,33 +1890,18 @@ export default function Home() {
                     {dayEvents.map((item) => {
                       const rowKey = myCancellationRowKey(item);
                       const busy = undoingFlakeKey === rowKey;
-                      const selfCancelled =
-                        !!selfE164 &&
-                        (item.flakedParticipants ?? []).includes(selfE164);
+                      const selfCancelled = item.youFlaked;
                       return (
                         <li key={rowKey} className="flex items-center gap-3">
-                          <CancelProgressPie
-                            participants={item.participants}
-                            flakedParticipants={item.flakedParticipants}
-                            cancelledCount={item.cancelledCount}
-                            totalPeople={item.totalPeople}
-                            selfE164={selfE164}
-                          />
+                          <PlanBadge item={item} />
                           <div className="min-w-0 flex-1">
-                            <p className="flex items-center gap-1.5 text-xs text-[#8a8a8a] leading-relaxed">
-                              {item.timeOfDay ? (
-                                <TimeOfDayIcon
-                                  kind={item.timeOfDay}
-                                  className="h-3.5 w-3.5 shrink-0 text-[#a3a3a3]"
-                                />
-                              ) : null}
-                              {item.mutual ? (
-                                <span className="text-[#5a7d6c]">
-                                  {meetingStatusText(item, selfCancelled)}
-                                </span>
-                              ) : (
-                                <>{meetingStatusText(item, selfCancelled)}</>
-                              )}
+                            <p
+                              className={
+                                "text-xs leading-relaxed " +
+                                (item.mutual ? "text-[#5a7d6c]" : "text-[#8a8a8a]")
+                              }
+                            >
+                              {meetingStatusText(item)}
                             </p>
                             <p className="text-xs text-[#6a6a6a] mt-1 leading-relaxed">
                               {[...(item.participants ?? [])]
