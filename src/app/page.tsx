@@ -104,12 +104,6 @@ function formatPlanDate(ymd: string): string {
   });
 }
 
-/** The text that goes out with an invite link, in a chat or a share sheet. */
-function inviteMessage(ymd: string | undefined, url: string): string {
-  const when = ymd ? formatPlanDate(ymd) : "soon";
-  return `I penciled us in for plans on ${when} 📝 Tap to join — and if anyone secretly wants to bail, you can flake guilt-free:\n${url}`;
-}
-
 function maskParticipantPhone(participantE164: string): string {
   const digits = participantE164.replace(/\D/g, "");
   if (digits.length >= 4) {
@@ -940,9 +934,11 @@ export default function Home() {
     setComposerBusy(true);
     setError("");
     try {
-      // With no numbers the composer opens empty and you pick the chat.
+      // Just the link: Messages turns it into a preview card that already says
+      // who penciled in which day (see /m/[id] metadata). With no numbers the
+      // composer opens empty and you pick the chat.
       const outcome = await composeGroupInvite({
-        body: inviteMessage(r.date, r.inviteUrl),
+        body: r.inviteUrl,
         recipients: r.recipients ?? [],
       });
       if (outcome === "failed") {
@@ -955,10 +951,10 @@ export default function Home() {
     }
   };
 
-  const handleShareLink = async (url: string, planDate?: string) => {
+  const handleShareLink = async (url: string) => {
     setError("");
     try {
-      await navigator.share({ text: inviteMessage(planDate, url) });
+      await navigator.share({ url });
     } catch {
       /* dismissed the share sheet */
     }
@@ -976,7 +972,7 @@ export default function Home() {
         date: item.date,
       });
     } else if (canWebShare) {
-      await handleShareLink(item.inviteUrl, item.date);
+      await handleShareLink(item.inviteUrl);
     } else {
       try {
         await navigator.clipboard.writeText(item.inviteUrl);
@@ -1791,7 +1787,7 @@ export default function Home() {
                       {canWebShare && !capacitorIos ? (
                         <button
                           onClick={() =>
-                            handleShareLink(result.inviteUrl!, result.date)
+                            handleShareLink(result.inviteUrl!)
                           }
                           className="w-full py-3 bg-[#e07a5f] text-white rounded-xl font-medium hover:bg-[#d06a4f] active:bg-[#c05a3f] transition-colors"
                         >

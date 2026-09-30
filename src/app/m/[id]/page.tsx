@@ -29,8 +29,12 @@ export async function generateMetadata({
     return { title: "You're invited", description: "Plans on flaky." };
   }
   const when = formatPlanDateForLocale(plan.date, planLocale());
-  const title = `Plans on ${when}`;
-  const description = `${plan.creator || "Someone"} penciled you in. Tap to join — and flake guilt-free if you secretly want out.`;
+  // Invites go out as a bare link, so this title is the whole message people
+  // see in the chat's preview card.
+  const title = plan.mutual
+    ? `Plans on ${when} are off`
+    : `${plan.creator || "Someone"} penciled you in · ${when}`;
+  const description = "Tap to join — and flake guilt-free if you secretly want out.";
   return {
     title,
     description,

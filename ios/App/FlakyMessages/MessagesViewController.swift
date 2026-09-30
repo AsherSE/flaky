@@ -105,11 +105,6 @@ final class PencilInModel: ObservableObject {
         return f.string(from: date)
     }
 
-    /// Same wording as the web app's invite, so every invite reads alike.
-    private static func inviteText(date: Date, url: String) -> String {
-        let when = date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
-        return "I penciled us in for plans on \(when) 📝 Tap to join — and if anyone secretly wants to bail, you can flake guilt-free:\n\(url)"
-    }
 
     func pencilIn() async {
         guard let token = SharedSession.token else {
@@ -146,7 +141,9 @@ final class PencilInModel: ObservableObject {
                 error = (json?["error"] as? String) ?? "Something went wrong. Try again."
                 return
             }
-            insertInvite(Self.inviteText(date: date, url: url))
+            // Just the link: Messages renders it as a preview card whose title
+            // already says who penciled in which day.
+            insertInvite(url)
         } catch {
             self.error = "Couldn’t reach flaky. Check your connection."
         }
