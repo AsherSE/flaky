@@ -2,11 +2,13 @@
 
 The centred payoff after an action: one big emoji, a short exclamation, one sentence, then the buttons.
 
-Three moments exist, each with its own emoji. Don't invent more.
-- 📝 **Penciled in!** "Now send them the invite. If anyone secretly wants out, they can tap flake." Then Send to group / Copy link / Send individually.
+Four moments exist, each with its own emoji. Don't invent more.
+- 📝 **Penciled in!** "Now send the invite. Anyone who opens the link joins the plan — and if they secretly want out, they can tap flake." Then Send to group (iOS) / Share invite (web) / Copy link / Send individually.
+- 🙌 **You're in!** After joining from an invite link: "Plans with Asher E. on Fri, 2 Oct. If you secretly want out, tap flake — nobody finds out unless everyone does."
 - 🤫 **Secret's safe** "If everyone wants out, you'll all be off the hook."
 - 🛋️ **It's mutual!** One line from the mutual-cancel pool, e.g. "Your couch was hoping you'd stay. Wish granted." Button says "Nice".
-The invite page uses the same shape (📝 "You're penciled in", 🌫️ "Invite not found").
+
+The invite page (`/m/<id>`) uses the same shape: 📝 "You're invited" with a Join this plan button, 🛋️ "This one's off" once everyone has flaked, 🌫️ "Invite not found".
 The emoji is the illustration; flaky has no other imagery.
 
-_Implemented inline in `src/app/page.tsx`._
+_Implemented inline in `src/app/page.tsx` and `src/app/m/[id]/page.tsx`._

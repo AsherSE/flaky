@@ -24,13 +24,13 @@ flaky lets you secretly flag that you want to cancel a plan. If everyone feels t
 
 **Color.** A warm paper page (`surface-top` → `surface-bottom` gradient) under one white `card`. `terracotta` is the brand: it fills the primary button, underlines the focused input, marks days with plans and the selected day. `sage` means "all good / you're covered": the Done button, recommit, the mutual status. `danger` is only for deleting an account; flaking is never shown as destructive. Text runs `ink` → `ink-2` → `ink-3` → `muted` → `faint` as it gets less important.
 
-**People are pastels.** Each person gets one of sixteen Japanese-named pastels (`slice-00-sakura` … `slice-15-nadeshiko`), hashed from their number so they keep it on every plan. Pastels only ever fill slices of the `CancelPie`; never use them for text or UI chrome.
+**Never show who wants out.** No counts, no progress, no per-person colours. You only ever see whether *you* flaked, and whether everyone did. Anything that hints at how many others are wavering breaks the app's one promise.
 
 **Type.** One family, Inter (`--font-sans`), followed by the emoji fonts so 📝 🤫 🛋️ always render. Bold `wordmark` and `moment-title` for the few headings; everything else is `body`, `label`, `small` or `caption`.
 
 **Layout.** A single 384px column (`column`) centred with a `space-4` gutter; `space-4` vertical rhythm inside the card, `space-6` card padding, `space-8` between the logo, the card and the calendar. One card per screen; the calendar and plan list sit on the gradient below it.
 
-**Shape.** Buttons `radius-xl`, the card `radius-2xl`, calendar cells `radius-lg`, anything round (pills, toggles, the pie) `radius-full`. Inputs have no box at all, only a 2px underline.
+**Shape.** Buttons `radius-xl`, the card `radius-2xl`, calendar cells `radius-lg`, anything round (pills, toggles, the plan badge) `radius-full`. Inputs have no box at all, only a 2px underline.
 
 **Depth.** One shadow: `shadow-card`. Everything else is flat, separated by `line-card` hairlines or by space.
 
@@ -44,6 +44,6 @@ flaky lets you secretly flag that you want to cancel a plan. If everyone feels t
 
 ## Iconography
 
-- **Emoji are the illustrations.** One per result moment, set at 48px: 📝 penciled in, 🤫 secret's safe, 🛋️ mutual, 🌫️ invite not found. Don't use emoji as bullets or decoration anywhere else.
+- **Emoji are the illustrations.** One per result moment, set at 48px: 📝 penciled in, 🙌 you're in, 🤫 secret's safe, 🛋️ mutual, 🌫️ invite not found. Don't use emoji as bullets or decoration anywhere else.
 - **Line icons are hand-drawn inline SVG**, 24px grid, `currentColor`, stroke 1.75 (2 for the small chevrons and +), round caps and joins. No icon library. The set lives under Icons: `morning`, `lunch`, `night` for time of day; `add`, `contacts`, `chevron-*` for controls.
 - **The logo** is the golden pastry mark (`assets/Logos/flaky-pastry.png`) set 56px tall immediately left of the `wordmark`, with the tagline "cancel plans, guilt-free" under it. Once signed in the mark appears alone, 48px, above the card. It is a raster; don't recolour or redraw it.
