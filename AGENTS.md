@@ -22,3 +22,9 @@ These defaults are optimized for AI coding agents (and humans) working on apps t
   needed. Always curl https://ai-gateway.vercel.sh/v1/models first; never trust model IDs from memory
 - For durable agent loops or untrusted code: use Workflow (pause/resume/state) + Sandbox; use Vercel MCP for secure infra access
 <!-- VERCEL BEST PRACTICES END -->
+
+## flaky design system
+
+- Read `design-system/README.md` before changing UI or copy: it covers voice, colour, type, layout and the accessibility caveats.
+- Colours come from `design-system/tokens.json` and are available as Tailwind classes (`bg-terracotta`, `text-ink-2`). Prefer them over new hex values.
+- Pattern guides are in `design-system/components/`. Update the matching guide or token when you change a pattern.
